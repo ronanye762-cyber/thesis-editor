@@ -1,0 +1,18 @@
+{
+  "name": "thesis-editor",
+  "version": "1.0.0",
+  "description": "Full-stack MVP for the thesis formatting editor.",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "NODE_ENV=development node src/server.js",
+    "build": "npm run check",
+    "check": "node --check src/server.js && node --check src/router.js && node --check src/storage.js && node --check src/auth.js && node --check src/exporters.js && node --check src/format-checker.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

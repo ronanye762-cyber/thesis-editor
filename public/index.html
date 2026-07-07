@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>论文格式智能排版工具 - 原型</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="icon-file-text" viewBox="0 0 24 24">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+        <path d="M10 9H8" />
+      </symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24">
+        <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8.5A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z" />
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="M20 6 9 17l-5-5" />
+      </symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.09V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.09-.4H3a2 2 0 1 1 0-4h-.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06A2 2 0 1 1 7.03 4.2l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.09V3a2 2 0 1 1 4 0v-.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.18.4.5.73.9.93.34.18.7.27 1.08.27H21a2 2 0 1 1 0 4h.09A1.7 1.7 0 0 0 19.4 15Z" />
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24">
+        <path d="M21 12a9 9 0 0 1-15.5 6.2" />
+        <path d="M3 12A9 9 0 0 1 18.5 5.8" />
+        <path d="M18 2v4h4" />
+        <path d="M6 22v-4H2" />
+      </symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24">
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+      </symbol>
+      <symbol id="icon-bold" viewBox="0 0 24 24">
+        <path d="M7 5h6a4 4 0 0 1 0 8H7z" />
+        <path d="M7 13h7a4 4 0 0 1 0 8H7z" />
+      </symbol>
+      <symbol id="icon-italic" viewBox="0 0 24 24">
+        <path d="M19 4h-9" />
+        <path d="M14 20H5" />
+        <path d="m15 4-6 16" />
+      </symbol>
+      <symbol id="icon-underline" viewBox="0 0 24 24">
+        <path d="M6 4v6a6 6 0 0 0 12 0V4" />
+        <path d="M4 22h16" />
+      </symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24">
+        <path d="M8 6h13" />
+        <path d="M8 12h13" />
+        <path d="M8 18h13" />
+        <path d="M3 6h.01" />
+        <path d="M3 12h.01" />
+        <path d="M3 18h.01" />
+      </symbol>
+      <symbol id="icon-table" viewBox="0 0 24 24">
+        <path d="M4 5h16v14H4z" />
+        <path d="M4 10h16" />
+        <path d="M10 5v14" />
+      </symbol>
+      <symbol id="icon-image" viewBox="0 0 24 24">
+        <path d="M4 5h16v14H4z" />
+        <path d="m4 15 4-4 4 4 3-3 5 5" />
+        <path d="M15 9h.01" />
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </symbol>
+      <symbol id="icon-minus" viewBox="0 0 24 24">
+        <path d="M5 12h14" />
+      </symbol>
+      <symbol id="icon-chevron-right" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6" />
+      </symbol>
+      <symbol id="icon-alert" viewBox="0 0 24 24">
+        <path d="M10.3 3.5 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.5a2 2 0 0 0-3.4 0Z" />
+        <path d="M12 9v4" />
+        <path d="M12 17h.01" />
+      </symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+    </svg>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark"><svg><use href="#icon-file-text"></use></svg></span>
+          <div>
+            <strong>论文格式智能排版工具</strong>
+            <span id="projectSubtitle">本科毕业论文示例</span>
+          </div>
+        </div>
+
+        <div class="project-strip">
+          <span class="project-label">当前模板</span>
+          <button class="template-pill" id="openTemplateTop" type="button">
+            通用本科论文模板
+            <svg><use href="#icon-chevron-right"></use></svg>
+          </button>
+          <span class="save-state" id="saveState">已自动保存</span>
+        </div>
+
+        <div class="top-actions">
+          <button class="command-btn" id="newProject" type="button">
+            <svg><use href="#icon-plus"></use></svg>
+            新建
+          </button>
+          <button class="command-btn" id="importProject" type="button">
+            <svg><use href="#icon-folder"></use></svg>
+            导入
+          </button>
+          <button class="command-btn" id="exportProject" type="button">
+            <svg><use href="#icon-download"></use></svg>
+            导出项目
+          </button>
+          <button class="command-btn" id="openTemplate" type="button">
+            <svg><use href="#icon-settings"></use></svg>
+            论文信息 / 模板
+          </button>
+          <button class="command-btn" id="runCheck" type="button">
+            <svg><use href="#icon-check"></use></svg>
+            格式检查
+          </button>
+          <button class="icon-btn" id="refreshPreview" type="button" aria-label="刷新预览" title="刷新预览">
+            <svg><use href="#icon-refresh"></use></svg>
+          </button>
+          <button class="command-btn primary" id="exportPdf" type="button">
+            <svg><use href="#icon-download"></use></svg>
+            导出 PDF
+          </button>
+          <button class="command-btn strong" id="exportWord" type="button">
+            <svg><use href="#icon-download"></use></svg>
+            导出 Word
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="outline-panel" aria-label="论文结构目录">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">结构</span>
+              <h2>论文目录</h2>
+            </div>
+            <button class="icon-btn ghost" id="addChapter" type="button" aria-label="新增章节" title="新增章节">
+              <svg><use href="#icon-plus"></use></svg>
+            </button>
+          </div>
+          <nav class="tree" id="outlineTree"></nav>
+
+          <div class="asset-block">
+            <div class="asset-title">项目资源</div>
+            <button class="asset-row" type="button">
+              <svg><use href="#icon-folder"></use></svg>
+              Figures
+            </button>
+            <button class="asset-row" type="button">
+              <svg><use href="#icon-file-text"></use></svg>
+              References.bib
+            </button>
+            <button class="asset-row" type="button">
+              <svg><use href="#icon-file-text"></use></svg>
+              Thesis_Template.docx
+            </button>
+          </div>
+        </aside>
+
+        <section class="editor-panel" aria-label="富文本编辑区">
+          <div class="toolbar" role="toolbar" aria-label="编辑工具栏">
+            <select id="blockStyle" aria-label="段落样式">
+              <option value="p">正文</option>
+              <option value="h1">一级标题</option>
+              <option value="h2">二级标题</option>
+              <option value="h3">三级标题</option>
+              <option value="blockquote">引用</option>
+            </select>
+            <span class="divider"></span>
+            <button class="icon-btn" data-command="bold" type="button" aria-label="加粗" title="加粗">
+              <svg><use href="#icon-bold"></use></svg>
+            </button>
+            <button class="icon-btn" data-command="italic" type="button" aria-label="斜体" title="斜体">
+              <svg><use href="#icon-italic"></use></svg>
+            </button>
+            <button class="icon-btn" data-command="underline" type="button" aria-label="下划线" title="下划线">
+              <svg><use href="#icon-underline"></use></svg>
+            </button>
+            <span class="divider"></span>
+            <button class="icon-btn" data-command="insertUnorderedList" type="button" aria-label="项目符号列表" title="项目符号列表">
+              <svg><use href="#icon-list"></use></svg>
+            </button>
+            <button class="icon-btn" id="insertTable" type="button" aria-label="插入表格" title="插入表格">
+              <svg><use href="#icon-table"></use></svg>
+            </button>
+            <button class="icon-btn" id="insertImage" type="button" aria-label="插入图片占位" title="插入图片占位">
+              <svg><use href="#icon-image"></use></svg>
+            </button>
+            <span class="divider"></span>
+            <button class="command-btn compact" id="insertReference" type="button">参考文献</button>
+            <button class="command-btn compact" id="insertFootnote" type="button">脚注</button>
+            <button class="command-btn compact" id="insertEquation" type="button">公式</button>
+          </div>
+
+          <div class="editor-scroll" id="editorScroll">
+            <article class="paper-editor" id="editor" contenteditable="true" spellcheck="false"></article>
+          </div>
+
+          <div class="statusbar">
+            <span id="cursorStyle">当前段落：正文，小四，1.5 倍行距</span>
+            <span id="wordCount">0 字</span>
+          </div>
+        </section>
+
+        <section class="preview-panel" aria-label="论文预览区">
+          <div class="preview-head">
+            <div>
+              <span class="eyebrow">预览</span>
+              <h2>分页效果</h2>
+            </div>
+            <div class="zoom-controls">
+              <button class="icon-btn" id="zoomOut" type="button" aria-label="缩小" title="缩小">
+                <svg><use href="#icon-minus"></use></svg>
+              </button>
+              <span id="zoomLabel">88%</span>
+              <button class="icon-btn" id="zoomIn" type="button" aria-label="放大" title="放大">
+                <svg><use href="#icon-plus"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div class="preview-scroll">
+            <div class="preview-pages" id="previewPages"></div>
+          </div>
+        </section>
+      </main>
+
+      <section class="issue-rail" id="issueRail" aria-label="格式检查结果">
+        <div class="issue-summary">
+          <svg><use href="#icon-alert"></use></svg>
+          <strong id="issueCount">0 个问题</strong>
+        </div>
+        <div class="issue-list" id="issueList"></div>
+      </section>
+    </div>
+
+    <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+    <aside class="template-drawer" id="templateDrawer" aria-label="模板设置" hidden>
+      <div class="drawer-head">
+        <div>
+          <span class="eyebrow">项目</span>
+          <h2 id="drawerTitle">论文信息与模板规则</h2>
+        </div>
+        <button class="icon-btn ghost" id="closeTemplate" type="button" aria-label="关闭" title="关闭">
+          <svg><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <section class="drawer-section">
+          <h3>论文信息</h3>
+          <div class="form-grid">
+            <label>
+              学校名称
+              <input id="metaSchool" type="text" />
+            </label>
+            <label>
+              学校代码
+              <input id="metaSchoolCode" type="text" />
+            </label>
+            <label>
+              学号
+              <input id="metaStudentId" type="text" />
+            </label>
+            <label>
+              论文类型
+              <select id="metaPaperType">
+                <option value="本科毕业论文">本科毕业论文</option>
+                <option value="专业学位硕士论文">专业学位硕士论文</option>
+                <option value="开题报告">开题报告</option>
+                <option value="课程论文">课程论文</option>
+              </select>
+            </label>
+            <label class="wide">
+              论文题目
+              <input id="metaTitle" type="text" />
+            </label>
+            <label>
+              专业
+              <input id="metaMajor" type="text" />
+            </label>
+            <label>
+              姓名
+              <input id="metaAuthor" type="text" />
+            </label>
+            <label>
+              指导教师
+              <input id="metaSupervisor" type="text" />
+            </label>
+            <label>
+              提交日期
+              <input id="metaDate" type="date" />
+            </label>
+            <label class="wide">
+              关键词
+              <input id="metaKeywords" type="text" placeholder="用分号或逗号分隔" />
+            </label>
+            <label class="wide">
+              中文摘要
+              <textarea id="metaAbstractCn"></textarea>
+            </label>
+            <label class="wide">
+              英文摘要
+              <textarea id="metaAbstractEn"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="drawer-section">
+          <h3>模板规则</h3>
+        <label>
+          正文字体
+          <select id="fontFamily">
+            <option value="'Hiragino Sans GB', 'Microsoft YaHei', sans-serif">黑体 / 无衬线</option>
+            <option value="'Songti SC', SimSun, serif">宋体 / 衬线</option>
+            <option value="'KaiTi', 'STKaiti', serif">楷体</option>
+          </select>
+        </label>
+        <label>
+          正文字号
+          <select id="fontSize">
+            <option value="15px">小四</option>
+            <option value="16px">四号</option>
+            <option value="14px">五号</option>
+          </select>
+        </label>
+        <label>
+          正文行距
+          <select id="lineHeight">
+            <option value="1.75">1.5 倍</option>
+            <option value="1.55">固定紧凑</option>
+            <option value="2">2 倍</option>
+          </select>
+        </label>
+        <label>
+          页边距
+          <select id="pageMargin">
+            <option value="26mm 24mm 24mm 28mm">上 2.6 / 左 2.8 cm</option>
+            <option value="25mm">四边 2.5 cm</option>
+            <option value="30mm 25mm 25mm 30mm">装订版</option>
+          </select>
+        </label>
+        <label>
+          标题编号
+          <select id="headingMode">
+            <option value="chapter">第 1 章 / 1.1</option>
+            <option value="decimal">1 / 1.1 / 1.1.1</option>
+          </select>
+        </label>
+        </section>
+
+        <section class="rule-stack drawer-section">
+          <h3>格式要求输入</h3>
+          <textarea id="requirementText">正文使用小四，1.5 倍行距；一级标题黑体三号居中；页边距上 2.5cm，下 2.5cm，左 3cm，右 2.5cm；参考文献采用 GB/T 7714。</textarea>
+          <button class="command-btn" id="parseRequirement" type="button">
+            <svg><use href="#icon-check"></use></svg>
+            解析为模板规则
+          </button>
+          <div class="parse-result" id="parseResult"></div>
+        </section>
+      </div>
+
+      <div class="drawer-actions">
+        <button class="command-btn" id="resetTemplate" type="button">恢复默认</button>
+        <button class="command-btn primary" id="applyTemplate" type="button">应用模板</button>
+      </div>
+    </aside>
+
+    <input id="projectFileInput" type="file" accept="application/json,.json" hidden />
+    <input id="imageFileInput" type="file" accept="image/*" hidden />
+    <script src="./app.js"></script>
+  </body>
+</html>

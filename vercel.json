@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "src/server.js": {
+      "includeFiles": "public/**",
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/src/server.js"
+    }
+  ]
+}
