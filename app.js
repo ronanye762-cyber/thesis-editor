@@ -54,34 +54,34 @@ function createDefaultState() {
       {
         id: "sec-intro",
         level: 1,
-        title: "第一章 绪论",
+        title: "绪论",
         body:
           "论文格式智能排版工具面向大学生论文写作过程中的格式调整问题，提供结构化填空、模板规则配置、实时分页预览和文件导出能力。系统希望让用户把主要精力放在论文内容本身，而不是反复处理字号、行距、目录、页码和参考文献格式。",
       },
       {
         id: "sec-background",
         level: 2,
-        title: "1.1 研究背景",
+        title: "研究背景",
         body:
           "毕业论文、开题报告和课程论文通常存在明确的学校格式要求。用户在 Word 中手动调整格式时，容易遇到标题层级混乱、目录页码不准、图表编号缺失、参考文献格式不统一等问题。现有 LaTeX 工具排版能力较强，但使用门槛较高。\n因此，第一版产品采用网站应用形态，以结构化论文数据和通用模板规则完成排版渲染，并提供 PDF 与 Word 导出入口。",
       },
       {
         id: "sec-meaning",
         level: 2,
-        title: "1.2 研究意义",
+        title: "研究意义",
         body:
           "该工具的价值在于把论文格式要求沉淀为可配置规则，使用户在编辑过程中只需要填写内容字段，即可看到标准化排版结果，并通过格式检查及时发现缺失内容和格式风险。",
       },
       {
         id: "sec-product",
         level: 1,
-        title: "第二章 产品方案",
+        title: "产品方案",
         body: "第一版主界面采用三栏结构。左侧展示论文结构目录，中间提供结构化内容填空区域，右侧展示接近最终提交效果的 A4 分页预览。",
       },
       {
         id: "sec-layout",
         level: 2,
-        title: "2.1 页面布局",
+        title: "页面布局",
         body: "页面布局围绕论文写作的核心动作展开：选择章节、填写内容、查看排版效果、检查格式风险、导出文件。",
         table: {
           caption: "表 2-1 第一版三栏页面结构",
@@ -92,7 +92,7 @@ function createDefaultState() {
       {
         id: "sec-template",
         level: 2,
-        title: "2.2 模板规则",
+        title: "模板规则",
         body:
           "模板规则包括页面尺寸、页边距、正文字体、字号、行距、标题层级、目录格式、页眉页脚、图表编号和参考文献格式。第一版先实现可视化配置，后续再增强格式要求自动解析。",
         figure: {
@@ -102,7 +102,7 @@ function createDefaultState() {
       {
         id: "sec-mvp",
         level: 1,
-        title: "第三章 MVP 范围",
+        title: "MVP 范围",
         body:
           "第一版需要完成结构化填空、左侧目录联动、右侧标准预览、基础模板配置、格式检查、PDF 导出和 Word 导出。多人协作、查重、复杂公式编辑和完整参考文献数据库暂不作为第一阶段重点。",
       },
@@ -116,7 +116,7 @@ function createDefaultState() {
     ],
     content: "",
   };
-  project.content = sectionsToHtml(project.sections);
+  project.content = sectionsToHtml(project.sections, project.template.headingMode);
   return project;
 }
 
@@ -156,7 +156,7 @@ function mergeState(base, incoming) {
     sections,
     content: "",
   };
-  merged.content = sectionsToHtml(merged.sections);
+  merged.content = sectionsToHtml(merged.sections, merged.template.headingMode);
   return merged;
 }
 
@@ -165,6 +165,11 @@ function bindEvents() {
   editor.addEventListener("change", handleStructuredInput);
   editor.addEventListener("click", handleEditorAction);
   editor.addEventListener("focusin", (event) => {
+    const metaCard = event.target.closest("[data-meta-card]");
+    if (metaCard) {
+      setActiveSection(metaCard.dataset.metaCard);
+      return;
+    }
     const card = event.target.closest("[data-section-id]");
     if (card) setActiveSection(card.dataset.sectionId);
   });
@@ -174,7 +179,7 @@ function bindEvents() {
   document.getElementById("addMajorSection").addEventListener("click", () => addSection(1));
   document.getElementById("addMinorSection").addEventListener("click", () => addSection(2));
   document.getElementById("addReferenceSection").addEventListener("click", ensureReferenceSection);
-  document.getElementById("focusMetadata").addEventListener("click", openDrawer);
+  document.getElementById("focusMetadata").addEventListener("click", () => jumpToSection("cover"));
 
   document.getElementById("refreshPreview").addEventListener("click", renderAll);
   document.getElementById("runCheck").addEventListener("click", () => {
@@ -208,11 +213,85 @@ function bindEvents() {
 }
 
 function renderStructuredEditor() {
-  editor.innerHTML = state.sections.map(sectionCardHtml).join("");
+  const numbered = numberSections(state.sections, state.template.headingMode);
+  editor.innerHTML = `${metadataCardHtml()}${abstractCardHtml()}${numbered.map((item, index) => sectionCardHtml(item.section, index, item.displayTitle)).join("")}`;
   updateCardActiveState();
 }
 
-function sectionCardHtml(section, index) {
+function metadataCardHtml() {
+  return `
+    <section class="section-card meta-card" id="form-cover" data-meta-card="cover">
+      <div class="section-card-head">
+        <span class="section-number">封</span>
+        <div class="fixed-card-title">
+          <strong>封面信息</strong>
+          <span>只填基础信息，右侧自动生成封面格式</span>
+        </div>
+      </div>
+      <div class="field-stack meta-grid">
+        ${metaInput("论文题目", "title", state.metadata.title)}
+        ${metaInput("学校名称", "school", state.metadata.school)}
+        ${metaInput("学校代码", "schoolCode", state.metadata.schoolCode)}
+        ${metaInput("学号", "studentId", state.metadata.studentId)}
+        ${metaSelect("论文类型", "paperType", state.metadata.paperType, ["本科毕业论文", "专业学位硕士论文", "开题报告", "课程论文"])}
+        ${metaInput("专业", "major", state.metadata.major)}
+        ${metaInput("姓名", "author", state.metadata.author)}
+        ${metaInput("指导教师", "supervisor", state.metadata.supervisor)}
+        ${metaInput("提交日期", "date", state.metadata.date, "date")}
+      </div>
+    </section>
+  `;
+}
+
+function abstractCardHtml() {
+  return `
+    <section class="section-card meta-card" id="form-abstract" data-meta-card="abstract">
+      <div class="section-card-head">
+        <span class="section-number">摘</span>
+        <div class="fixed-card-title">
+          <strong>摘要与关键词</strong>
+          <span>填写纯文本，预览区自动排成中英文摘要页</span>
+        </div>
+      </div>
+      <div class="field-stack">
+        <label class="form-field">
+          <span>中文摘要</span>
+          <textarea data-meta="abstractCn" rows="7" spellcheck="false">${escapeHtml(state.metadata.abstractCn || "")}</textarea>
+        </label>
+        <label class="form-field">
+          <span>英文摘要</span>
+          <textarea data-meta="abstractEn" rows="5" spellcheck="false">${escapeHtml(state.metadata.abstractEn || "")}</textarea>
+        </label>
+        <label class="form-field">
+          <span>关键词</span>
+          <input data-meta="keywords" type="text" value="${escapeHtml(state.metadata.keywords || "")}" placeholder="用分号或逗号分隔" />
+        </label>
+      </div>
+    </section>
+  `;
+}
+
+function metaInput(label, key, value, type = "text") {
+  return `
+    <label class="form-field">
+      <span>${label}</span>
+      <input data-meta="${key}" type="${type}" value="${escapeHtml(value || "")}" />
+    </label>
+  `;
+}
+
+function metaSelect(label, key, value, options) {
+  return `
+    <label class="form-field">
+      <span>${label}</span>
+      <select class="form-select" data-meta="${key}">
+        ${options.map((option) => `<option value="${escapeHtml(option)}"${option === value ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function sectionCardHtml(section, index, displayTitle) {
   const isReference = section.kind === "references";
   const hasTable = Boolean(section.table);
   const hasFigure = Boolean(section.figure);
@@ -220,6 +299,7 @@ function sectionCardHtml(section, index) {
     <section class="section-card" id="form-${section.id}" data-section-id="${section.id}">
       <div class="section-card-head">
         <span class="section-number">${index + 1}</span>
+        <div class="auto-title-preview">${escapeHtml(displayTitle)}</div>
         <select class="level-select" data-field="level" aria-label="章节层级">
           <option value="1"${section.level === 1 ? " selected" : ""}>一级章节</option>
           <option value="2"${section.level === 2 ? " selected" : ""}>二级小节</option>
@@ -233,8 +313,8 @@ function sectionCardHtml(section, index) {
       </div>
       <div class="field-stack">
         <label class="form-field">
-          <span>${isReference ? "章节名称" : "标题"}</span>
-          <input data-field="title" type="text" value="${escapeHtml(section.title)}" />
+          <span>${isReference ? "章节名称" : "标题（不用输入编号）"}</span>
+          <input data-field="title" type="text" value="${escapeHtml(cleanSectionTitle(section.title, section.level, section.kind))}" placeholder="例如：研究背景" />
         </label>
         <label class="form-field">
           <span>${isReference ? "参考文献条目" : "正文内容"}</span>
@@ -292,6 +372,15 @@ function figureFieldsHtml(figure) {
 }
 
 function handleStructuredInput(event) {
+  const metaKey = event.target.dataset.meta;
+  if (metaKey) {
+    state.metadata[metaKey] = event.target.value;
+    setActiveSection(event.target.closest("[data-meta-card]")?.dataset.metaCard || "cover", false);
+    mirrorDrawerField(metaKey, event.target.value);
+    scheduleSaveAndRender();
+    return;
+  }
+
   const field = event.target.dataset.field;
   if (!field) return;
   const card = event.target.closest("[data-section-id]");
@@ -299,7 +388,7 @@ function handleStructuredInput(event) {
   if (!section) return;
 
   if (field === "level") section.level = Number(event.target.value);
-  if (field === "title") section.title = event.target.value;
+  if (field === "title") section.title = cleanSectionTitle(event.target.value, section.level, section.kind);
   if (field === "body") section.body = event.target.value;
   if (field === "tableCaption") section.table.caption = event.target.value;
   if (field === "tableRows") section.table.rows = event.target.value;
@@ -307,6 +396,11 @@ function handleStructuredInput(event) {
 
   setActiveSection(section.id, false);
   scheduleSaveAndRender();
+}
+
+function mirrorDrawerField(key, value) {
+  const field = getMetadataFields().find(([fieldKey]) => fieldKey === key)?.[1];
+  if (field) field.value = value;
 }
 
 function handleEditorAction(event) {
@@ -439,8 +533,13 @@ function setActiveSection(id, updateOutline = true) {
 }
 
 function updateCardActiveState() {
+  editor.querySelectorAll(".meta-card").forEach((card) => {
+    card.classList.toggle("active", card.dataset.metaCard === activeHeadingId);
+  });
   editor.querySelectorAll(".section-card").forEach((card) => {
-    card.classList.toggle("active", card.dataset.sectionId === activeHeadingId);
+    if (card.dataset.sectionId) {
+      card.classList.toggle("active", card.dataset.sectionId === activeHeadingId);
+    }
   });
 }
 
@@ -463,7 +562,7 @@ function persistState() {
 }
 
 function syncContent() {
-  state.content = sectionsToHtml(state.sections);
+  state.content = sectionsToHtml(state.sections, state.template.headingMode);
 }
 
 function renderAll() {
@@ -480,11 +579,11 @@ function renderAll() {
 }
 
 function collectHeadings(pageMap = {}) {
-  return state.sections.map((section, index) => ({
-    id: section.id,
-    level: Number(section.level || 1),
-    title: section.title.trim() || `未命名标题 ${index + 1}`,
-    page: pageMap[section.id] || Math.max(4, Math.ceil((index + 1) / 3) + 3),
+  return numberSections(state.sections, state.template.headingMode).map((item, index) => ({
+    id: item.section.id,
+    level: Number(item.section.level || 1),
+    title: item.displayTitle || `未命名标题 ${index + 1}`,
+    page: pageMap[item.section.id] || Math.max(4, Math.ceil((index + 1) / 3) + 3),
   }));
 }
 
@@ -521,11 +620,21 @@ function renderOutline(headings) {
 }
 
 function jumpToSection(id) {
-  if (["cover", "abstract", "toc"].includes(id)) {
-    previewPages.querySelector(`[data-preview="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (id !== "toc") openDrawer();
+  if (["cover", "abstract"].includes(id)) {
+    const card = document.getElementById(`form-${id}`);
+    card?.scrollIntoView({ behavior: "smooth", block: "center" });
+    card?.querySelector("input, textarea, select")?.focus({ preventScroll: true });
     activeHeadingId = id;
     renderOutline(collectHeadings());
+    updateCardActiveState();
+    return;
+  }
+
+  if (id === "toc") {
+    previewPages.querySelector(`[data-preview="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    activeHeadingId = id;
+    renderOutline(collectHeadings());
+    updateCardActiveState();
     return;
   }
 
@@ -627,13 +736,52 @@ function pageFooter(pageNumber) {
   return `<footer class="page-footer">第 ${pageNumber} 页</footer>`;
 }
 
-function sectionsToHtml(sections) {
-  return sections.map(sectionToHtml).join("");
+function numberSections(sections, headingMode = "chapter") {
+  let chapter = 0;
+  let second = 0;
+  let third = 0;
+
+  return sections.map((section) => {
+    const level = Math.min(3, Math.max(1, Number(section.level || 1)));
+    const rawTitle = cleanSectionTitle(section.title, level, section.kind) || "未命名标题";
+    const isReference = section.kind === "references" || rawTitle.includes("参考文献");
+    let prefix = "";
+
+    if (isReference) {
+      return { section: { ...section, title: rawTitle }, displayTitle: "参考文献" };
+    }
+
+    if (level === 1) {
+      chapter += 1;
+      second = 0;
+      third = 0;
+      prefix = headingMode === "decimal" ? `${chapter}` : `第${toChineseNumber(chapter)}章`;
+    } else if (level === 2) {
+      if (chapter === 0) chapter = 1;
+      second += 1;
+      third = 0;
+      prefix = `${chapter}.${second}`;
+    } else {
+      if (chapter === 0) chapter = 1;
+      if (second === 0) second = 1;
+      third += 1;
+      prefix = `${chapter}.${second}.${third}`;
+    }
+
+    return {
+      section: { ...section, title: rawTitle, level },
+      displayTitle: `${prefix} ${rawTitle}`,
+    };
+  });
 }
 
-function sectionToHtml(section) {
+function sectionsToHtml(sections, headingMode = "chapter") {
+  return numberSections(sections, headingMode).map((item) => sectionToHtml(item.section, item.displayTitle)).join("");
+}
+
+function sectionToHtml(section, displayTitle) {
   const level = Math.min(3, Math.max(1, Number(section.level || 1)));
-  const title = escapeHtml(section.title || "未命名标题");
+  const title = escapeHtml(displayTitle || section.title || "未命名标题");
   const parts = [`<h${level} id="${section.id}">${title}</h${level}>`];
 
   if (section.kind === "references" || title.includes("参考文献")) {
@@ -740,8 +888,8 @@ function runChecks(headings = collectHeadings()) {
   requiredMeta("title", "缺少论文题目", "metadata", issues);
   requiredMeta("author", "缺少作者姓名", "metadata", issues);
   requiredMeta("supervisor", "缺少指导教师", "metadata", issues);
-  requiredMeta("abstractCn", "缺少中文摘要", "metadata", issues);
-  requiredMeta("keywords", "缺少关键词", "metadata", issues);
+  requiredMeta("abstractCn", "缺少中文摘要", "abstract", issues);
+  requiredMeta("keywords", "缺少关键词", "abstract", issues);
 
   if (!headings.some((heading) => heading.level === 1)) {
     issues.push({ type: "error", label: "错误", text: "正文缺少一级标题", target: state.sections[0]?.id || "editor" });
@@ -810,8 +958,11 @@ function renderIssues(issues) {
 function jumpToIssue(issue) {
   if (!issue) return;
   if (issue.target === "metadata") {
-    openDrawer();
-    document.getElementById("metaTitle").focus();
+    jumpToSection("cover");
+    return;
+  }
+  if (issue.target === "abstract") {
+    jumpToSection("abstract");
     return;
   }
   if (issue.target === "editor") {
@@ -833,13 +984,13 @@ function issueRailFlash(count) {
 }
 
 function updateActiveHeading() {
-  const cards = Array.from(editor.querySelectorAll(".section-card"));
-  let current = cards[0]?.dataset.sectionId || "";
+  const cards = Array.from(editor.querySelectorAll(".meta-card, .section-card"));
+  let current = cards[0]?.dataset.metaCard || cards[0]?.dataset.sectionId || "";
   const scrollTop = editorScroll.scrollTop;
 
   cards.forEach((card) => {
     const top = card.offsetTop - 120;
-    if (top <= scrollTop) current = card.dataset.sectionId;
+    if (top <= scrollTop) current = card.dataset.metaCard || card.dataset.sectionId;
   });
 
   if (current && current !== activeHeadingId) {
@@ -851,14 +1002,25 @@ function updateActiveHeading() {
 }
 
 function updateCursorState() {
+  if (activeHeadingId === "cover") {
+    cursorStyle.textContent = "当前填空：封面信息";
+    return;
+  }
+  if (activeHeadingId === "abstract") {
+    cursorStyle.textContent = "当前填空：摘要与关键词";
+    return;
+  }
   const section = findSection(activeHeadingId);
-  const label = section ? `${section.title || "未命名章节"} · ${levelLabel(section.level)}` : "封面 / 摘要信息";
+  const heading = collectHeadings().find((item) => item.id === activeHeadingId);
+  const label = section ? `${heading?.title || section.title || "未命名章节"} · ${levelLabel(section.level)}` : "目录预览";
   cursorStyle.textContent = `当前填空：${label}`;
 }
 
 function updateWordCount() {
-  const count = state.sections.map((section) => `${section.title}${section.body}${section.table?.rows || ""}${section.figure?.caption || ""}`).join("").replace(/\s/g, "").length;
-  wordCount.textContent = `${count} 字 · ${state.sections.length} 个结构块`;
+  const metadataText = `${state.metadata.title}${state.metadata.abstractCn}${state.metadata.abstractEn}${state.metadata.keywords}`;
+  const sectionText = state.sections.map((section) => `${section.title}${section.body}${section.table?.rows || ""}${section.figure?.caption || ""}`).join("");
+  const count = `${metadataText}${sectionText}`.replace(/\s/g, "").length;
+  wordCount.textContent = `${count} 字 · ${state.sections.length} 个章节`;
 }
 
 function getMetadataFields() {
@@ -912,6 +1074,7 @@ function applyDrawerState() {
 
   applyTemplateVars();
   updateProjectLabels();
+  renderStructuredEditor();
   scheduleSaveAndRender();
   closeDrawer();
 }
@@ -1119,7 +1282,7 @@ function sectionsFromHtml(html) {
       current = {
         id: node.id || createSectionId(),
         level: Number(tag.slice(1)),
-        title: node.textContent.trim() || "未命名标题",
+        title: cleanSectionTitle(node.textContent.trim(), Number(tag.slice(1))) || "未命名标题",
         body: "",
       };
       if (current.title.includes("参考文献")) current.kind = "references";
@@ -1172,7 +1335,7 @@ function normalizeSections(sections) {
     id: section.id || createSectionId(),
     level: Math.min(3, Math.max(1, Number(section.level || 1))),
     kind: section.kind === "references" ? "references" : undefined,
-    title: String(section.title || "未命名标题"),
+    title: cleanSectionTitle(String(section.title || "未命名标题"), Number(section.level || 1), section.kind),
     body: String(section.body || ""),
     table: section.table
       ? {
@@ -1201,6 +1364,30 @@ function splitLines(value) {
     .split(/\n+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function cleanSectionTitle(value, level = 1, kind = "") {
+  const raw = String(value || "").trim();
+  if (kind === "references" || raw === "参考文献") return "参考文献";
+  return raw
+    .replace(/^第[一二三四五六七八九十百零〇两0-9]+章\s*/, "")
+    .replace(/^\d+(?:\.\d+){0,2}\s*/, "")
+    .replace(/^第\s*\d+\s*章\s*/, "")
+    .trim() || (Number(level) === 1 ? "未命名章节" : "未命名小节");
+}
+
+function toChineseNumber(value) {
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return String(value);
+  if (number <= 10) return number === 10 ? "十" : digits[number];
+  if (number < 20) return `十${digits[number - 10]}`;
+  if (number < 100) {
+    const ten = Math.floor(number / 10);
+    const one = number % 10;
+    return `${digits[ten]}十${one ? digits[one] : ""}`;
+  }
+  return String(number);
 }
 
 function createSectionId() {
