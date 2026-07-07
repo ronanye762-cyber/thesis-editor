@@ -1,0 +1,21 @@
+{
+  "templates": [
+    {
+      "id": "tpl_4b6fce40-bbec-4435-8b70-623c1778f0be",
+      "ownerId": null,
+      "isSystem": true,
+      "name": "通用本科论文模板",
+      "description": "适合本科毕业论文、课程论文、开题报告的基础模板。",
+      "rules": {
+        "fontFamily": "'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+        "fontSize": "15px",
+        "lineHeight": "1.75",
+        "pageMargin": "26mm 24mm 24mm 28mm",
+        "headingMode": "chapter",
+        "referenceStyle": "GB/T 7714"
+      },
+      "createdAt": "2026-07-07T09:31:03.554Z",
+      "updatedAt": "2026-07-07T09:31:03.555Z"
+    }
+  ]
+}

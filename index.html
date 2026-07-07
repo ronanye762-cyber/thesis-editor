@@ -172,43 +172,30 @@
           </div>
         </aside>
 
-        <section class="editor-panel" aria-label="富文本编辑区">
-          <div class="toolbar" role="toolbar" aria-label="编辑工具栏">
-            <select id="blockStyle" aria-label="段落样式">
-              <option value="p">正文</option>
-              <option value="h1">一级标题</option>
-              <option value="h2">二级标题</option>
-              <option value="h3">三级标题</option>
-              <option value="blockquote">引用</option>
-            </select>
-            <span class="divider"></span>
-            <button class="icon-btn" data-command="bold" type="button" aria-label="加粗" title="加粗">
-              <svg><use href="#icon-bold"></use></svg>
+        <section class="editor-panel" aria-label="结构化填空区">
+          <div class="toolbar structured-toolbar" role="toolbar" aria-label="结构化写作工具栏">
+            <span class="mode-chip">结构化填空</span>
+            <button class="command-btn compact" id="addMajorSection" type="button">
+              <svg><use href="#icon-plus"></use></svg>
+              一级章节
             </button>
-            <button class="icon-btn" data-command="italic" type="button" aria-label="斜体" title="斜体">
-              <svg><use href="#icon-italic"></use></svg>
+            <button class="command-btn compact" id="addMinorSection" type="button">
+              <svg><use href="#icon-plus"></use></svg>
+              二级小节
             </button>
-            <button class="icon-btn" data-command="underline" type="button" aria-label="下划线" title="下划线">
-              <svg><use href="#icon-underline"></use></svg>
+            <button class="command-btn compact" id="addReferenceSection" type="button">
+              <svg><use href="#icon-file-text"></use></svg>
+              参考文献
             </button>
             <span class="divider"></span>
-            <button class="icon-btn" data-command="insertUnorderedList" type="button" aria-label="项目符号列表" title="项目符号列表">
-              <svg><use href="#icon-list"></use></svg>
+            <button class="command-btn compact" id="focusMetadata" type="button">
+              <svg><use href="#icon-settings"></use></svg>
+              封面 / 摘要
             </button>
-            <button class="icon-btn" id="insertTable" type="button" aria-label="插入表格" title="插入表格">
-              <svg><use href="#icon-table"></use></svg>
-            </button>
-            <button class="icon-btn" id="insertImage" type="button" aria-label="插入图片占位" title="插入图片占位">
-              <svg><use href="#icon-image"></use></svg>
-            </button>
-            <span class="divider"></span>
-            <button class="command-btn compact" id="insertReference" type="button">参考文献</button>
-            <button class="command-btn compact" id="insertFootnote" type="button">脚注</button>
-            <button class="command-btn compact" id="insertEquation" type="button">公式</button>
           </div>
 
           <div class="editor-scroll" id="editorScroll">
-            <article class="paper-editor" id="editor" contenteditable="true" spellcheck="false"></article>
+            <div class="form-editor" id="editor" aria-label="论文内容填空表单"></div>
           </div>
 
           <div class="statusbar">
