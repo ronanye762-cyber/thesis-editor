@@ -10,35 +10,48 @@ const cursorStyle = document.getElementById("cursorStyle");
 const drawer = document.getElementById("templateDrawer");
 const backdrop = document.getElementById("drawerBackdrop");
 const projectFileInput = document.getElementById("projectFileInput");
+const imageFileInput = document.getElementById("imageFileInput");
+const projectDialog = document.getElementById("projectDialog");
+const authDialog = document.getElementById("authDialog");
 
 const stateKey = "thesis-editor-structured-state-v2";
 const legacyStateKey = "thesis-editor-mvp-state-v1";
 const legacyContentKey = "thesis-editor-prototype-content";
+const tokenKey = "thesis-editor-session-token";
 
 let state = createDefaultState();
-let zoom = 0.82;
+let zoom = 0.52;
 let activeHeadingId = state.sections[0]?.id || "";
 let saveTimer = 0;
 let renderTimer = 0;
+let cloudSaveTimer = 0;
 let latestIssues = [];
+let currentUser = null;
+let authMode = "login";
+let pendingFigureSectionId = "";
+let cloudProjects = [];
+let cloudAvailable = true;
+let cloudSaveInFlight = false;
+let cloudSavePending = false;
 
 function createDefaultState() {
   const project = {
+    id: null,
+    revision: 0,
+    clientUpdatedAt: new Date().toISOString(),
     metadata: {
-      school: "示例大学",
-      schoolCode: "10251",
-      studentId: "Y20260707",
+      school: "",
+      schoolCode: "",
+      studentId: "",
       paperType: "本科毕业论文",
-      title: "论文格式智能排版工具设计",
-      major: "软件工程",
-      author: "学生示例",
-      supervisor: "导师示例",
-      date: "2026-07-07",
-      keywords: "论文排版；结构化写作；模板规则；PDF 导出；Word 导出",
-      abstractCn:
-        "本文围绕大学生论文写作过程中反复调整格式的问题，设计一个基于结构化填空的在线论文排版工具。用户只需要按章节填写标题、正文、表格和参考文献等纯文本内容，系统即可根据模板规则自动生成标准论文版式，并支持实时预览、格式检查和文件导出。",
-      abstractEn:
-        "This project designs a structured thesis formatting tool for students. Users fill in plain-text fields for each paper section, while the system renders standardized pages according to template rules and supports preview, checking, and export.",
+      title: "未命名论文",
+      major: "",
+      author: "",
+      supervisor: "",
+      date: new Date().toISOString().slice(0, 10),
+      keywords: "",
+      abstractCn: "",
+      abstractEn: "",
     },
     template: {
       name: "通用本科论文模板",
@@ -55,63 +68,38 @@ function createDefaultState() {
         id: "sec-intro",
         level: 1,
         title: "绪论",
-        body:
-          "论文格式智能排版工具面向大学生论文写作过程中的格式调整问题，提供结构化填空、模板规则配置、实时分页预览和文件导出能力。系统希望让用户把主要精力放在论文内容本身，而不是反复处理字号、行距、目录、页码和参考文献格式。",
+        body: "",
       },
       {
         id: "sec-background",
         level: 2,
         title: "研究背景",
-        body:
-          "毕业论文、开题报告和课程论文通常存在明确的学校格式要求。用户在 Word 中手动调整格式时，容易遇到标题层级混乱、目录页码不准、图表编号缺失、参考文献格式不统一等问题。现有 LaTeX 工具排版能力较强，但使用门槛较高。\n因此，第一版产品采用网站应用形态，以结构化论文数据和通用模板规则完成排版渲染，并提供 PDF 与 Word 导出入口。",
+        body: "",
       },
       {
         id: "sec-meaning",
         level: 2,
         title: "研究意义",
-        body:
-          "该工具的价值在于把论文格式要求沉淀为可配置规则，使用户在编辑过程中只需要填写内容字段，即可看到标准化排版结果，并通过格式检查及时发现缺失内容和格式风险。",
+        body: "",
       },
       {
         id: "sec-product",
         level: 1,
-        title: "产品方案",
-        body: "第一版主界面采用三栏结构。左侧展示论文结构目录，中间提供结构化内容填空区域，右侧展示接近最终提交效果的 A4 分页预览。",
+        title: "研究内容",
+        body: "",
       },
       {
-        id: "sec-layout",
+        id: "sec-method",
         level: 2,
-        title: "页面布局",
-        body: "页面布局围绕论文写作的核心动作展开：选择章节、填写内容、查看排版效果、检查格式风险、导出文件。",
-        table: {
-          caption: "表 2-1 第一版三栏页面结构",
-          headers: ["区域", "用途", "第一版能力"],
-          rows: "左侧目录｜论文结构导航｜自动生成章节，点击定位\n中间填空｜正文内容录入｜标题、正文、表格、参考文献字段\n右侧预览｜最终效果检查｜封面、目录、正文分页预览",
-        },
-      },
-      {
-        id: "sec-template",
-        level: 2,
-        title: "模板规则",
-        body:
-          "模板规则包括页面尺寸、页边距、正文字体、字号、行距、标题层级、目录格式、页眉页脚、图表编号和参考文献格式。第一版先实现可视化配置，后续再增强格式要求自动解析。",
-        figure: {
-          caption: "图 2-1 结构化填空与标准排版联动示意图",
-        },
-      },
-      {
-        id: "sec-mvp",
-        level: 1,
-        title: "MVP 范围",
-        body:
-          "第一版需要完成结构化填空、左侧目录联动、右侧标准预览、基础模板配置、格式检查、PDF 导出和 Word 导出。多人协作、查重、复杂公式编辑和完整参考文献数据库暂不作为第一阶段重点。",
+        title: "研究方法",
+        body: "",
       },
       {
         id: "sec-references",
         level: 1,
         kind: "references",
         title: "参考文献",
-        body: "教育部学位论文编写规范相关要求。\nGB/T 7714 信息与文献参考文献著录规则。",
+        body: "",
       },
     ],
     content: "",
@@ -120,7 +108,7 @@ function createDefaultState() {
   return project;
 }
 
-function init() {
+async function init() {
   loadState();
   activeHeadingId = state.sections[0]?.id || "";
   populateDrawer();
@@ -129,6 +117,8 @@ function init() {
   bindEvents();
   renderAll();
   setZoom(zoom);
+  updateAccountUi();
+  await restoreSession();
 }
 
 function loadState() {
@@ -151,6 +141,9 @@ function loadState() {
 function mergeState(base, incoming) {
   const sections = normalizeSections(incoming.sections) || sectionsFromHtml(incoming.content) || base.sections;
   const merged = {
+    id: incoming.id || null,
+    revision: Number(incoming.revision || 0),
+    clientUpdatedAt: incoming.clientUpdatedAt || incoming.updatedAt || new Date().toISOString(),
     metadata: { ...base.metadata, ...(incoming.metadata || {}) },
     template: { ...base.template, ...(incoming.template || {}) },
     sections,
@@ -195,6 +188,29 @@ function bindEvents() {
   document.getElementById("importProject").addEventListener("click", () => projectFileInput.click());
   projectFileInput.addEventListener("change", importProject);
   document.getElementById("newProject").addEventListener("click", newProject);
+  document.getElementById("projectCenter").addEventListener("click", openProjectDialog);
+  document.getElementById("accountButton").addEventListener("click", openAuthDialog);
+  document.getElementById("projectLogin").addEventListener("click", () => {
+    projectDialog.close();
+    openAuthDialog();
+  });
+  document.getElementById("createCloudProject").addEventListener("click", createProjectFromCurrentState);
+  document.getElementById("loginMode").addEventListener("click", () => setAuthMode("login"));
+  document.getElementById("registerMode").addEventListener("click", () => setAuthMode("register"));
+  document.getElementById("authForm").addEventListener("submit", submitAuth);
+  document.getElementById("logoutButton").addEventListener("click", logoutUser);
+  document.getElementById("openProjectsFromAccount").addEventListener("click", () => {
+    authDialog.close();
+    openProjectDialog();
+  });
+  document.querySelectorAll("[data-close-dialog]").forEach((button) => {
+    button.addEventListener("click", () => document.getElementById(button.dataset.closeDialog)?.close());
+  });
+  projectDialog.addEventListener("click", handleProjectDialogAction);
+  document.getElementById("openIssues").addEventListener("click", () => {
+    const issues = runChecks(collectHeadings());
+    issueRailFlash(issues.length);
+  });
 
   document.getElementById("openTemplate").addEventListener("click", openDrawer);
   document.getElementById("openTemplateTop").addEventListener("click", openDrawer);
@@ -203,6 +219,22 @@ function bindEvents() {
   document.getElementById("applyTemplate").addEventListener("click", applyDrawerState);
   document.getElementById("resetTemplate").addEventListener("click", resetTemplate);
   document.getElementById("parseRequirement").addEventListener("click", parseRequirement);
+  document.getElementById("templatePreset").addEventListener("change", applyTemplatePreset);
+  ["fontFamily", "fontSize", "lineHeight", "pageMargin", "headingMode"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => {
+      document.getElementById("templatePreset").value = "custom";
+    });
+  });
+  imageFileInput.addEventListener("change", importFigureImage);
+  window.addEventListener("beforeunload", persistState);
+  document.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      persistState();
+      scheduleCloudSave(true);
+      showToast("项目已保存");
+    }
+  });
 
   getMetadataFields().forEach(([key, element]) => {
     element.addEventListener("input", () => {
@@ -349,7 +381,11 @@ function tableFieldsHtml(table) {
         <input data-field="tableCaption" type="text" value="${escapeHtml(table.caption || "")}" />
       </label>
       <label class="form-field">
-        <span>表格内容</span>
+        <span>列名（用竖线分隔）</span>
+        <input data-field="tableHeaders" type="text" value="${escapeHtml((table.headers || []).join("｜"))}" placeholder="项目｜说明｜状态" />
+      </label>
+      <label class="form-field">
+        <span>表格内容（每行一条，列之间用竖线分隔）</span>
         <textarea data-field="tableRows" rows="4" spellcheck="false">${escapeHtml(table.rows || "")}</textarea>
       </label>
     </div>
@@ -367,6 +403,17 @@ function figureFieldsHtml(figure) {
         <span>图题</span>
         <input data-field="figureCaption" type="text" value="${escapeHtml(figure.caption || "")}" />
       </label>
+      <label class="form-field">
+        <span>图片说明</span>
+        <input data-field="figureAlt" type="text" value="${escapeHtml(figure.alt || "")}" placeholder="用于无法显示图片时说明内容" />
+      </label>
+      <div class="figure-upload-preview">
+        ${figure.dataUrl ? `<img src="${escapeHtml(figure.dataUrl)}" alt="${escapeHtml(figure.alt || figure.caption || "论文图片")}" />` : ""}
+        <button class="command-btn compact" data-action="upload-figure" type="button">
+          <svg><use href="#icon-image"></use></svg>
+          ${figure.dataUrl ? "更换图片" : "选择图片"}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -391,8 +438,10 @@ function handleStructuredInput(event) {
   if (field === "title") section.title = cleanSectionTitle(event.target.value, section.level, section.kind);
   if (field === "body") section.body = event.target.value;
   if (field === "tableCaption") section.table.caption = event.target.value;
+  if (field === "tableHeaders") section.table.headers = event.target.value.split(/[｜|\t]/).map((item) => item.trim()).filter(Boolean);
   if (field === "tableRows") section.table.rows = event.target.value;
   if (field === "figureCaption") section.figure.caption = event.target.value;
+  if (field === "figureAlt") section.figure.alt = event.target.value;
 
   setActiveSection(section.id, false);
   scheduleSaveAndRender();
@@ -417,6 +466,10 @@ function handleEditorAction(event) {
   if (action === "remove-table") removeTableFromSection(section.id);
   if (action === "add-figure") addFigureToSection(section.id);
   if (action === "remove-figure") removeFigureFromSection(section.id);
+  if (action === "upload-figure") {
+    pendingFigureSectionId = section.id;
+    imageFileInput.click();
+  }
 }
 
 function findSection(id) {
@@ -524,6 +577,33 @@ function removeFigureFromSection(id) {
   scheduleSaveAndRender();
 }
 
+function importFigureImage() {
+  const file = imageFileInput.files?.[0];
+  const section = findSection(pendingFigureSectionId);
+  imageFileInput.value = "";
+  pendingFigureSectionId = "";
+  if (!file || !section?.figure) return;
+  if (!file.type.startsWith("image/")) {
+    showToast("请选择图片文件", "error");
+    return;
+  }
+  if (file.size > 3 * 1024 * 1024) {
+    showToast("图片不能超过 3 MB", "error");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    section.figure.dataUrl = String(reader.result || "");
+    section.figure.alt ||= file.name.replace(/\.[^.]+$/, "");
+    activeHeadingId = section.id;
+    renderStructuredEditor();
+    scheduleSaveAndRender();
+    showToast("图片已添加");
+  };
+  reader.readAsDataURL(file);
+}
+
 function setActiveSection(id, updateOutline = true) {
   if (!id || activeHeadingId === id) return;
   activeHeadingId = id;
@@ -545,20 +625,28 @@ function updateCardActiveState() {
 
 function scheduleSaveAndRender() {
   syncContent();
+  state.clientUpdatedAt = new Date().toISOString();
   clearTimeout(saveTimer);
   saveState.textContent = "保存中";
   saveTimer = window.setTimeout(() => {
     persistState();
     const now = new Date();
-    saveState.textContent = `已自动保存 ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const target = currentUser && state.id ? "云端同步中" : "已保存到本机";
+    saveState.textContent = `${target} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   }, 260);
+  scheduleCloudSave();
 
   clearTimeout(renderTimer);
   renderTimer = window.setTimeout(renderAll, 180);
 }
 
 function persistState() {
-  localStorage.setItem(stateKey, JSON.stringify(state));
+  try {
+    localStorage.setItem(stateKey, JSON.stringify(state));
+  } catch (error) {
+    saveState.textContent = "本地空间不足";
+    showToast("本地存储空间不足，请压缩图片或导出项目备份", "error");
+  }
 }
 
 function syncContent() {
@@ -574,6 +662,7 @@ function renderAll() {
   renderPreview(headings, chunks);
   runChecks(headings);
   updateWordCount();
+  updateProgress();
   updateCursorState();
   updateProjectLabels();
 }
@@ -820,6 +909,14 @@ function tableToHtml(table) {
 }
 
 function figureToHtml(figure) {
+  if (figure.dataUrl) {
+    return `
+      <figure>
+        <img src="${escapeHtml(figure.dataUrl)}" alt="${escapeHtml(figure.alt || figure.caption || "论文图片")}" />
+        <figcaption>${escapeHtml(figure.caption || "图 X-X 图题说明")}</figcaption>
+      </figure>
+    `;
+  }
   return `
     <div class="image-placeholder">${escapeHtml(figure.caption || "图示占位")}</div>
     <p class="figure-caption">${escapeHtml(figure.caption || "图 X-X 图题说明")}</p>
@@ -847,7 +944,7 @@ function chunkContentBlocks() {
             ? 1
             : tag === "table"
               ? 3.3
-              : node.classList.contains("image-placeholder")
+              : node.classList.contains("image-placeholder") || tag === "figure"
                 ? 3.5
                 : Math.max(0.9, Math.ceil(textLength / 110));
 
@@ -926,6 +1023,7 @@ function runChecks(headings = collectHeadings()) {
 
   latestIssues = issues;
   renderIssues(issues);
+  document.getElementById("sidebarIssueText").textContent = issues.length ? `${issues.length} 项需要处理` : "结构检查已通过";
   return issues;
 }
 
@@ -1023,6 +1121,24 @@ function updateWordCount() {
   wordCount.textContent = `${count} 字 · ${state.sections.length} 个章节`;
 }
 
+function updateProgress() {
+  const required = [
+    state.metadata.school,
+    state.metadata.title && state.metadata.title !== "未命名论文" ? state.metadata.title : "",
+    state.metadata.author,
+    state.metadata.supervisor,
+    state.metadata.abstractCn,
+    state.metadata.keywords,
+    state.sections.some((section) => section.level === 1 && section.body.trim()) ? "yes" : "",
+    state.sections.some((section) => section.kind === "references" && section.body.trim()) ? "yes" : "",
+  ];
+  const completed = required.filter((value) => String(value || "").trim()).length;
+  const percent = Math.round((completed / required.length) * 100);
+  document.getElementById("progressBar").style.width = `${percent}%`;
+  document.getElementById("progressLabel").textContent = `${percent}%`;
+  document.getElementById("cloudLabel").textContent = currentUser && state.id ? "已连接云端" : "本地草稿";
+}
+
 function getMetadataFields() {
   return [
     ["school", document.getElementById("metaSchool")],
@@ -1051,6 +1167,7 @@ function populateDrawer() {
   document.getElementById("pageMargin").value = state.template.pageMargin;
   document.getElementById("headingMode").value = state.template.headingMode;
   document.getElementById("requirementText").value = state.template.requirementText || "";
+  document.getElementById("templatePreset").value = templatePresetForState();
   updateProjectLabels();
 }
 
@@ -1071,6 +1188,9 @@ function applyDrawerState() {
   state.template.pageMargin = document.getElementById("pageMargin").value;
   state.template.headingMode = document.getElementById("headingMode").value;
   state.template.requirementText = document.getElementById("requirementText").value;
+  if (document.getElementById("templatePreset").value === "custom") {
+    state.template.name = "自定义论文模板";
+  }
 
   applyTemplateVars();
   updateProjectLabels();
@@ -1107,6 +1227,49 @@ function resetTemplate() {
   state.template = createDefaultState().template;
   populateDrawer();
   applyTemplateVars();
+  scheduleSaveAndRender();
+}
+
+function templatePresetForState() {
+  if (state.template.name.includes("硕士")) return "master";
+  if (state.template.name.includes("课程")) return "course";
+  if (state.template.name.includes("本科") || state.template.name.includes("通用")) return "undergraduate";
+  return "custom";
+}
+
+function applyTemplatePreset(event) {
+  const preset = event.target.value;
+  const presets = {
+    undergraduate: {
+      name: "通用本科论文模板",
+      fontFamily: "'Songti SC', SimSun, serif",
+      fontSize: "15px",
+      lineHeight: "1.75",
+      pageMargin: "26mm 24mm 24mm 28mm",
+      headingMode: "chapter",
+    },
+    master: {
+      name: "通用硕士学位论文模板",
+      fontFamily: "'Songti SC', SimSun, serif",
+      fontSize: "15px",
+      lineHeight: "1.75",
+      pageMargin: "30mm 25mm 25mm 30mm",
+      headingMode: "chapter",
+    },
+    course: {
+      name: "课程论文简洁模板",
+      fontFamily: "'Songti SC', SimSun, serif",
+      fontSize: "14px",
+      lineHeight: "1.55",
+      pageMargin: "25mm",
+      headingMode: "decimal",
+    },
+  };
+  if (!presets[preset]) return;
+  state.template = { ...state.template, ...presets[preset] };
+  populateDrawer();
+  applyTemplateVars();
+  renderStructuredEditor();
   scheduleSaveAndRender();
 }
 
@@ -1158,7 +1321,7 @@ function parseRequirement() {
     : `<span class="parse-pill">未识别到明确规则，可手动调整上方模板项</span>`;
 }
 
-function newProject() {
+async function newProject() {
   if (!window.confirm("新建项目会替换当前本地草稿。确定继续吗？")) return;
   state = createDefaultState();
   activeHeadingId = state.sections[0]?.id || "";
@@ -1166,15 +1329,382 @@ function newProject() {
   applyTemplateVars();
   renderStructuredEditor();
   scheduleSaveAndRender();
+  if (currentUser && cloudAvailable) {
+    await createProjectFromCurrentState(null, true);
+  }
+}
+
+async function checkCloudStatus() {
+  try {
+    const response = await fetch("/health", { headers: { Accept: "application/json" } });
+    const result = await response.json();
+    cloudAvailable = result.persistent !== false;
+  } catch {
+    cloudAvailable = false;
+  }
+  updateAccountUi();
+}
+
+async function restoreSession() {
+  await checkCloudStatus();
+  const token = localStorage.getItem(tokenKey);
+  if (!token || !cloudAvailable) return;
+  try {
+    const result = await apiRequest("/api/me");
+    currentUser = result.user;
+    updateAccountUi();
+    if (state.id) {
+      const cloud = await apiRequest(`/api/projects/${encodeURIComponent(state.id)}`);
+      const remoteTime = new Date(cloud.project.updatedAt || 0).getTime();
+      const localTime = new Date(state.clientUpdatedAt || 0).getTime();
+      if (remoteTime > localTime) applyCloudProject(cloud.project);
+    }
+  } catch (error) {
+    localStorage.removeItem(tokenKey);
+    currentUser = null;
+    updateAccountUi();
+  }
+}
+
+async function apiRequest(path, options = {}) {
+  const headers = { Accept: "application/json", ...(options.headers || {}) };
+  const token = localStorage.getItem(tokenKey);
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (options.body && typeof options.body !== "string") {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await fetch(path, {
+    ...options,
+    headers,
+    body: options.body && typeof options.body !== "string" ? JSON.stringify(options.body) : options.body,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error?.message || payload.error || "请求失败，请稍后重试");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function openAuthDialog() {
+  updateAccountUi();
+  if (!cloudAvailable && !currentUser) {
+    document.getElementById("authError").textContent = "当前部署尚未连接云数据库，仍可使用本机自动保存与项目导出。";
+  }
+  authDialog.showModal();
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const register = mode === "register";
+  document.getElementById("loginMode").classList.toggle("active", !register);
+  document.getElementById("registerMode").classList.toggle("active", register);
+  document.getElementById("authNameField").hidden = !register;
+  document.getElementById("authTitle").textContent = register ? "创建云端账户" : "登录并同步论文";
+  document.getElementById("authSubmit").textContent = register ? "注册并登录" : "登录";
+  document.getElementById("authPassword").autocomplete = register ? "new-password" : "current-password";
+  document.getElementById("authError").textContent = "";
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  if (!cloudAvailable) {
+    document.getElementById("authError").textContent = "请先在 Vercel 为项目连接 Upstash Redis。";
+    return;
+  }
+  const submit = document.getElementById("authSubmit");
+  const errorField = document.getElementById("authError");
+  submit.disabled = true;
+  submit.textContent = authMode === "register" ? "正在注册..." : "正在登录...";
+  errorField.textContent = "";
+  try {
+    const body = {
+      email: document.getElementById("authEmail").value.trim(),
+      password: document.getElementById("authPassword").value,
+      name: document.getElementById("authName").value.trim(),
+    };
+    const result = await apiRequest(`/api/auth/${authMode}`, { method: "POST", body });
+    localStorage.setItem(tokenKey, result.session.token);
+    currentUser = result.user;
+    updateAccountUi();
+    authDialog.close();
+    showToast(authMode === "register" ? "账户创建成功" : "登录成功");
+    if (!state.id) await createProjectFromCurrentState(null, true);
+  } catch (error) {
+    errorField.textContent = error.message;
+  } finally {
+    submit.disabled = false;
+    submit.textContent = authMode === "register" ? "注册并登录" : "登录";
+  }
+}
+
+async function logoutUser() {
+  try {
+    await apiRequest("/api/auth/logout", { method: "POST", body: {} });
+  } catch {
+    // Local session cleanup is sufficient when the network is unavailable.
+  }
+  localStorage.removeItem(tokenKey);
+  currentUser = null;
+  state.id = null;
+  state.revision = 0;
+  persistState();
+  updateAccountUi();
+  authDialog.close();
+  showToast("已退出登录，当前内容继续保存在本机");
+}
+
+function updateAccountUi() {
+  const label = document.getElementById("accountLabel");
+  const signedIn = Boolean(currentUser);
+  label.textContent = signedIn ? currentUser.name || "账户" : cloudAvailable ? "登录" : "本机";
+  document.getElementById("signedOutPanel").hidden = signedIn;
+  document.getElementById("signedInPanel").hidden = !signedIn;
+  document.getElementById("accountActions").hidden = !signedIn;
+  if (signedIn) {
+    document.getElementById("accountName").textContent = currentUser.name || "用户";
+    document.getElementById("accountEmail").textContent = currentUser.email || "";
+    document.getElementById("accountAvatar").textContent = (currentUser.name || currentUser.email || "U").slice(0, 1).toUpperCase();
+  }
+  updateProgress();
+}
+
+async function openProjectDialog() {
+  projectDialog.showModal();
+  if (!currentUser) {
+    cloudProjects = [];
+    document.getElementById("projectCallout").textContent = cloudAvailable
+      ? "登录后可跨设备保存论文。未登录时，当前内容仍会自动保存在这台设备。"
+      : "当前部署尚未连接云数据库。你仍可在本机编辑，并使用“导出项目”备份 JSON 文件。";
+    document.getElementById("projectLogin").hidden = !cloudAvailable;
+    document.getElementById("createCloudProject").innerHTML = `${icon("icon-plus")}新建本地项目`;
+    renderProjectList();
+    return;
+  }
+  document.getElementById("projectCallout").textContent = "项目已安全关联到当前账户。打开其他项目之前，当前内容会先自动保存。";
+  document.getElementById("projectLogin").hidden = true;
+  document.getElementById("createCloudProject").innerHTML = `${icon("icon-plus")}新建项目`;
+  await loadCloudProjects();
+}
+
+async function loadCloudProjects() {
+  const list = document.getElementById("projectList");
+  list.innerHTML = `<div class="empty-state">正在读取项目...</div>`;
+  try {
+    const result = await apiRequest("/api/projects");
+    cloudProjects = result.projects || [];
+    renderProjectList();
+  } catch (error) {
+    list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderProjectList() {
+  const list = document.getElementById("projectList");
+  if (!currentUser) {
+    list.innerHTML = `
+      <div class="project-row current">
+        <div class="project-row-main">
+          <strong>${escapeHtml(state.metadata.title || "未命名论文")}</strong>
+          <span>本机草稿 · ${escapeHtml(state.metadata.paperType || "论文")}</span>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  list.innerHTML = cloudProjects.length
+    ? cloudProjects
+        .map(
+          (project) => `
+            <div class="project-row ${project.id === state.id ? "current" : ""}">
+              <div class="project-row-main">
+                <strong>${escapeHtml(project.title || "未命名论文")}</strong>
+                <span>${escapeHtml(project.paperType || "论文")} · ${project.wordCount || 0} 字 · ${formatTime(project.updatedAt)}</span>
+              </div>
+              <div class="project-row-actions">
+                <button class="command-btn compact" data-project-action="open" data-project-id="${escapeHtml(project.id)}" type="button">
+                  ${project.id === state.id ? "重新加载" : "打开"}
+                </button>
+                <button class="icon-btn ghost danger" data-project-action="delete" data-project-id="${escapeHtml(project.id)}" type="button" aria-label="删除项目" title="删除项目">
+                  <svg><use href="#icon-trash"></use></svg>
+                </button>
+              </div>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="empty-state">还没有云端项目，可以把当前论文保存为第一个项目。</div>`;
+}
+
+async function handleProjectDialogAction(event) {
+  const button = event.target.closest("[data-project-action]");
+  if (!button) return;
+  const id = button.dataset.projectId;
+  if (button.dataset.projectAction === "open") await openCloudProject(id);
+  if (button.dataset.projectAction === "delete") await deleteCloudProject(id);
+}
+
+async function createProjectFromCurrentState(event, silent = false) {
+  if (!currentUser) {
+    if (event) {
+      projectDialog.close();
+      if (cloudAvailable) openAuthDialog();
+      else newProject();
+    }
+    return;
+  }
+  try {
+    syncContent();
+    const result = await apiRequest("/api/projects", {
+      method: "POST",
+      body: projectPayload(false),
+    });
+    state.id = result.project.id;
+    state.revision = result.project.revision || 1;
+    state.clientUpdatedAt = result.project.updatedAt;
+    persistState();
+    saveState.textContent = "已保存到云端";
+    if (!silent) {
+      await loadCloudProjects();
+      showToast("新项目已创建");
+    }
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function openCloudProject(id) {
+  try {
+    if (state.id) await saveCloudProject();
+    const result = await apiRequest(`/api/projects/${encodeURIComponent(id)}`);
+    applyCloudProject(result.project);
+    projectDialog.close();
+    showToast("项目已打开");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function applyCloudProject(project) {
+  state = mergeState(createDefaultState(), project);
+  state.id = project.id;
+  state.revision = Number(project.revision || 1);
+  state.clientUpdatedAt = project.updatedAt || new Date().toISOString();
+  activeHeadingId = state.sections[0]?.id || "cover";
+  populateDrawer();
+  applyTemplateVars();
+  renderStructuredEditor();
+  renderAll();
+  persistState();
+}
+
+async function deleteCloudProject(id) {
+  const project = cloudProjects.find((item) => item.id === id);
+  if (!window.confirm(`确定删除“${project?.title || "这个项目"}”吗？删除后无法恢复。`)) return;
+  try {
+    await apiRequest(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (state.id === id) {
+      state.id = null;
+      state.revision = 0;
+      persistState();
+    }
+    await loadCloudProjects();
+    showToast("项目已删除");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function scheduleCloudSave(force = false) {
+  clearTimeout(cloudSaveTimer);
+  if (!currentUser || !state.id || !cloudAvailable) return;
+  if (force) {
+    saveCloudProject();
+    return;
+  }
+  cloudSaveTimer = window.setTimeout(saveCloudProject, 1200);
+}
+
+async function saveCloudProject() {
+  if (!currentUser || !state.id || !cloudAvailable) return;
+  if (cloudSaveInFlight) {
+    cloudSavePending = true;
+    return;
+  }
+  cloudSaveInFlight = true;
+  try {
+    syncContent();
+    const result = await apiRequest(`/api/projects/${encodeURIComponent(state.id)}`, {
+      method: "PUT",
+      body: projectPayload(true),
+    });
+    state.revision = Number(result.project.revision || state.revision + 1);
+    state.clientUpdatedAt = result.project.updatedAt;
+    persistState();
+    saveState.textContent = `已同步云端 ${formatClock(result.project.updatedAt)}`;
+  } catch (error) {
+    if (error.status === 409) {
+      saveState.textContent = "云端版本冲突";
+      showToast("项目已在其他设备更新，请从项目中心重新加载", "error");
+    } else {
+      saveState.textContent = "云端同步失败，本机已保存";
+    }
+  } finally {
+    cloudSaveInFlight = false;
+    if (cloudSavePending) {
+      cloudSavePending = false;
+      scheduleCloudSave(true);
+    }
+  }
+}
+
+function projectPayload(includeRevision) {
+  const payload = {
+    title: state.metadata.title || "未命名论文",
+    metadata: state.metadata,
+    template: state.template,
+    sections: state.sections,
+    content: state.content,
+  };
+  if (includeRevision) payload.revision = Number(state.revision || 1);
+  return payload;
+}
+
+function showToast(message, type = "") {
+  const region = document.getElementById("toastRegion");
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`.trim();
+  toast.textContent = message;
+  region.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 3200);
+}
+
+function formatClock(value) {
+  const date = new Date(value || Date.now());
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatTime(value) {
+  const date = new Date(value || Date.now());
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${formatClock(date)}`;
 }
 
 function exportProject() {
   syncContent();
   persistState();
+  const backup = {
+    ...state,
+    id: null,
+    revision: 0,
+    exportedAt: new Date().toISOString(),
+  };
   downloadBlob(
     `${safeFileName(state.metadata.title || "论文项目")}.json`,
-    new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }),
+    new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }),
   );
+  showToast("项目备份已导出");
 }
 
 function importProject() {
@@ -1185,12 +1715,15 @@ function importProject() {
     try {
       const incoming = JSON.parse(String(reader.result));
       state = mergeState(createDefaultState(), incoming);
+      state.id = null;
+      state.revision = 0;
       activeHeadingId = state.sections[0]?.id || "";
       populateDrawer();
       applyTemplateVars();
       renderStructuredEditor();
       scheduleSaveAndRender();
       saveState.textContent = "项目已导入";
+      showToast("项目导入成功");
     } catch (error) {
       window.alert("导入失败：请选择由本工具导出的 JSON 项目文件。");
     } finally {
@@ -1296,7 +1829,12 @@ function sectionsFromHtml(html) {
       return;
     }
     if (node.classList?.contains("image-placeholder") || tag === "figure") {
-      current.figure = { caption: node.textContent.trim() || "图示占位" };
+      const image = node.querySelector?.("img");
+      current.figure = {
+        caption: node.querySelector?.("figcaption")?.textContent.trim() || node.textContent.trim() || "图示占位",
+        alt: image?.alt || "",
+        dataUrl: image?.src?.startsWith("data:image/") ? image.src : "",
+      };
       return;
     }
     if (tag === "ol" && (current.kind === "references" || current.title.includes("参考文献"))) {
@@ -1344,7 +1882,13 @@ function normalizeSections(sections) {
           rows: String(section.table.rows || ""),
         }
       : undefined,
-    figure: section.figure ? { caption: String(section.figure.caption || "") } : undefined,
+    figure: section.figure
+      ? {
+          caption: String(section.figure.caption || ""),
+          alt: String(section.figure.alt || ""),
+          dataUrl: /^data:image\//.test(String(section.figure.dataUrl || "")) ? String(section.figure.dataUrl) : "",
+        }
+      : undefined,
   }));
 }
 
@@ -1428,4 +1972,7 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-init();
+init().catch((error) => {
+  console.error(error);
+  showToast("初始化失败，请刷新页面重试", "error");
+});

@@ -3,7 +3,9 @@ const appConfig = require("./config");
 const { route } = require("./router");
 const { ensureDataStore } = require("./storage");
 
-ensureDataStore();
+ensureDataStore().catch((error) => {
+  console.error(`Data store initialization failed: ${error.message}`);
+});
 
 const server = http.createServer((req, res) => {
   route(req, res);

@@ -11,39 +11,99 @@ const collections = {
   assets: { file: "assets.json", root: "assets", initial: [] },
 };
 
-function ensureDataStore() {
-  fs.mkdirSync(appConfig.dataDir, { recursive: true });
-  for (const collection of Object.values(collections)) {
-    const filePath = collectionPath(collection.file);
-    if (!fs.existsSync(filePath)) {
-      writeRaw(filePath, { [collection.root]: collection.initial });
-    }
-  }
-  seedDefaultTemplate();
+let initialized = false;
+let initializationPromise = null;
+
+function storageMode() {
+  return appConfig.redisUrl && appConfig.redisToken ? "upstash" : "filesystem";
 }
 
-function seedDefaultTemplate() {
-  const db = readCollection("templates");
-  if (db.some((template) => template.isSystem)) return;
+async function ensureDataStore() {
+  if (initialized) return;
+  if (initializationPromise) return initializationPromise;
+  initializationPromise = initializeDataStore();
+  try {
+    await initializationPromise;
+    initialized = true;
+  } finally {
+    initializationPromise = null;
+  }
+}
 
-  db.push({
+async function initializeDataStore() {
+  if (storageMode() === "filesystem") {
+    fs.mkdirSync(appConfig.dataDir, { recursive: true });
+    for (const collection of Object.values(collections)) {
+      const filePath = collectionPath(collection.file);
+      if (!fs.existsSync(filePath)) {
+        writeRaw(filePath, { [collection.root]: collection.initial });
+      }
+    }
+  }
+
+  await seedDefaultTemplates();
+}
+
+async function seedDefaultTemplates() {
+  const rows = await readCollection("templates", { skipEnsure: true });
+  if (rows.some((template) => template.isSystem)) return;
+
+  const createdAt = now();
+  rows.push(
+    systemTemplate(
+      "通用本科论文模板",
+      "适合本科毕业论文、课程论文和开题报告的基础格式。",
+      {
+        fontFamily: "'Songti SC', SimSun, serif",
+        fontSize: "15px",
+        lineHeight: "1.75",
+        pageMargin: "26mm 24mm 24mm 28mm",
+        headingMode: "chapter",
+        referenceStyle: "GB/T 7714",
+      },
+      createdAt,
+    ),
+    systemTemplate(
+      "通用硕士学位论文模板",
+      "适合中文硕士学位论文的装订版页面与章节编号。",
+      {
+        fontFamily: "'Songti SC', SimSun, serif",
+        fontSize: "15px",
+        lineHeight: "1.75",
+        pageMargin: "30mm 25mm 25mm 30mm",
+        headingMode: "chapter",
+        referenceStyle: "GB/T 7714",
+      },
+      createdAt,
+    ),
+    systemTemplate(
+      "课程论文简洁模板",
+      "适合课程作业、研究报告和短篇论文。",
+      {
+        fontFamily: "'Songti SC', SimSun, serif",
+        fontSize: "14px",
+        lineHeight: "1.55",
+        pageMargin: "25mm",
+        headingMode: "decimal",
+        referenceStyle: "GB/T 7714",
+      },
+      createdAt,
+    ),
+  );
+  await writeCollection("templates", rows, { skipEnsure: true });
+}
+
+function systemTemplate(name, description, rules, createdAt) {
+  return {
     id: createId("tpl"),
     ownerId: null,
     isSystem: true,
-    name: "通用本科论文模板",
-    description: "适合本科毕业论文、课程论文、开题报告的基础模板。",
-    rules: {
-      fontFamily: "'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-      fontSize: "15px",
-      lineHeight: "1.75",
-      pageMargin: "26mm 24mm 24mm 28mm",
-      headingMode: "chapter",
-      referenceStyle: "GB/T 7714",
-    },
-    createdAt: now(),
-    updatedAt: now(),
-  });
-  writeCollection("templates", db);
+    name,
+    description,
+    rules,
+    createdAt,
+    updatedAt: createdAt,
+  };
 }
 
 function collectionPath(file) {
@@ -65,17 +125,58 @@ function writeRaw(filePath, value) {
   fs.renameSync(tempPath, filePath);
 }
 
-function readCollection(name) {
+async function readCollection(name, options = {}) {
   const collection = collections[name];
   if (!collection) throw new Error(`Unknown collection: ${name}`);
+  if (!options.skipEnsure) await ensureDataStore();
+
+  if (storageMode() === "upstash") {
+    const result = await redisCommand(["GET", redisKey(name)]);
+    if (!result) return structuredClone(collection.initial);
+    try {
+      const rows = JSON.parse(result);
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      throw new Error(`Stored collection is invalid: ${name}`);
+    }
+  }
+
   const raw = readRaw(collectionPath(collection.file));
   return Array.isArray(raw[collection.root]) ? raw[collection.root] : [];
 }
 
-function writeCollection(name, rows) {
+async function writeCollection(name, rows, options = {}) {
   const collection = collections[name];
   if (!collection) throw new Error(`Unknown collection: ${name}`);
+  if (!Array.isArray(rows)) throw new TypeError(`Collection must be an array: ${name}`);
+  if (!options.skipEnsure) await ensureDataStore();
+
+  if (storageMode() === "upstash") {
+    await redisCommand(["SET", redisKey(name), JSON.stringify(rows)]);
+    return;
+  }
+
   writeRaw(collectionPath(collection.file), { [collection.root]: rows });
+}
+
+async function redisCommand(command) {
+  const response = await fetch(appConfig.redisUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${appConfig.redisToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(command),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.error) {
+    throw new Error(`Persistent storage failed: ${payload.error || response.statusText}`);
+  }
+  return payload.result;
+}
+
+function redisKey(name) {
+  return `${appConfig.storagePrefix}:collection:${name}`;
 }
 
 function createId(prefix) {
@@ -103,5 +204,6 @@ module.exports = {
   now,
   pickPublicUser,
   readCollection,
+  storageMode,
   writeCollection,
 };

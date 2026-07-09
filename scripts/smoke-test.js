@@ -28,6 +28,9 @@ async function main() {
 
   try {
     await waitForHealth();
+    const health = await (await fetch(`${baseUrl}/health`)).json();
+    assert(health.storage === "filesystem", "local smoke test should use filesystem storage");
+    assert(health.persistent === true, "local filesystem storage should be persistent");
     const home = await fetch(`${baseUrl}/`);
     assert(home.ok, "frontend should be served from /");
     assert((await home.text()).includes("论文"), "frontend HTML should include thesis editor copy");
@@ -42,7 +45,7 @@ async function main() {
     const token = auth.session.token;
 
     const templates = await request("GET", "/api/templates", null, token);
-    assert(templates.templates.length >= 1, "should include default template");
+    assert(templates.templates.length >= 3, "should include three system templates");
 
     const created = await request(
       "POST",
@@ -62,14 +65,44 @@ async function main() {
           fontSize: "15px",
           lineHeight: "1.75",
         },
+        sections: [
+          { id: "intro", level: 1, title: "绪论", body: "这里是结构化正文内容。" },
+          { id: "references", level: 1, kind: "references", title: "参考文献", body: "测试文献。" },
+        ],
         content: "<h1>第一章 绪论</h1><p>这里是正文内容。</p><h1>参考文献</h1><ol><li>测试文献。</li></ol>",
       },
       token,
     );
     assert(created.project?.id, "project should be created");
+    assert(created.project.sections?.length === 2, "structured sections should be stored");
+    assert(created.project.revision === 1, "new project should start at revision 1");
 
     const list = await request("GET", "/api/projects", null, token);
     assert(list.projects.length === 1, "project list should contain created project");
+    assert(list.projects[0].wordCount > 0, "project list should include word count");
+
+    const updated = await request(
+      "PUT",
+      `/api/projects/${created.project.id}`,
+      {
+        revision: 1,
+        title: "后端冒烟测试论文（已更新）",
+        metadata: created.project.metadata,
+        template: created.project.template,
+        sections: created.project.sections,
+        content: created.project.content,
+      },
+      token,
+    );
+    assert(updated.project.revision === 2, "project update should increment revision");
+
+    const conflict = await rawRequest(
+      "PUT",
+      `/api/projects/${created.project.id}`,
+      { revision: 1, title: "过期更新" },
+      token,
+    );
+    assert(conflict.status === 409, "stale project update should return conflict");
 
     const check = await request("POST", "/api/format/check", { projectId: created.project.id }, token);
     assert(check.result?.stats?.headings >= 2, "format check should return stats");
@@ -102,6 +135,17 @@ async function main() {
   } finally {
     child.kill("SIGTERM");
   }
+}
+
+async function rawRequest(method, pathname, body, token) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method,
+    headers,
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, payload: await response.json() };
 }
 
 async function waitForHealth() {

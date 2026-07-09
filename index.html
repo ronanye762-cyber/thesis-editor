@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>论文格式智能排版工具 - 原型</title>
+    <title>论文格式智能排版工具</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -86,6 +86,22 @@
         <path d="M18 6 6 18" />
         <path d="m6 6 12 12" />
       </symbol>
+      <symbol id="icon-user" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </symbol>
+      <symbol id="icon-cloud" viewBox="0 0 24 24">
+        <path d="M17.5 19H6a4 4 0 0 1-.7-7.94A7 7 0 0 1 18.8 9.2 5 5 0 0 1 17.5 19Z" />
+        <path d="m9 14 3-3 3 3" />
+        <path d="M12 11v6" />
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18" />
+        <path d="M8 6V4h8v2" />
+        <path d="m19 6-1 15H6L5 6" />
+        <path d="M10 11v5" />
+        <path d="M14 11v5" />
+      </symbol>
     </svg>
 
     <div class="app-shell">
@@ -108,6 +124,10 @@
         </div>
 
         <div class="top-actions">
+          <button class="command-btn" id="projectCenter" type="button">
+            <svg><use href="#icon-folder"></use></svg>
+            项目
+          </button>
           <button class="command-btn" id="newProject" type="button">
             <svg><use href="#icon-plus"></use></svg>
             新建
@@ -139,6 +159,10 @@
             <svg><use href="#icon-download"></use></svg>
             导出 Word
           </button>
+          <button class="account-btn" id="accountButton" type="button" aria-label="账户" title="账户">
+            <svg><use href="#icon-user"></use></svg>
+            <span id="accountLabel">登录</span>
+          </button>
         </div>
       </header>
 
@@ -155,19 +179,18 @@
           </div>
           <nav class="tree" id="outlineTree"></nav>
 
-          <div class="asset-block">
-            <div class="asset-title">项目资源</div>
-            <button class="asset-row" type="button">
-              <svg><use href="#icon-folder"></use></svg>
-              Figures
-            </button>
-            <button class="asset-row" type="button">
-              <svg><use href="#icon-file-text"></use></svg>
-              References.bib
-            </button>
-            <button class="asset-row" type="button">
-              <svg><use href="#icon-file-text"></use></svg>
-              Thesis_Template.docx
+          <div class="progress-block">
+            <div class="asset-title">写作进度</div>
+            <div class="progress-track" aria-label="写作完成度">
+              <span id="progressBar"></span>
+            </div>
+            <div class="progress-meta">
+              <strong id="progressLabel">0%</strong>
+              <span id="cloudLabel">本地草稿</span>
+            </div>
+            <button class="asset-row" id="openIssues" type="button">
+              <svg><use href="#icon-check"></use></svg>
+              <span id="sidebarIssueText">检查论文结构</span>
             </button>
           </div>
         </aside>
@@ -310,6 +333,15 @@
         <section class="drawer-section">
           <h3>模板规则</h3>
         <label>
+          模板预设
+          <select id="templatePreset">
+            <option value="undergraduate">通用本科论文</option>
+            <option value="master">通用硕士论文</option>
+            <option value="course">课程论文</option>
+            <option value="custom">自定义</option>
+          </select>
+        </label>
+        <label>
           正文字体
           <select id="fontFamily">
             <option value="'Hiragino Sans GB', 'Microsoft YaHei', sans-serif">黑体 / 无衬线</option>
@@ -366,6 +398,82 @@
         <button class="command-btn primary" id="applyTemplate" type="button">应用模板</button>
       </div>
     </aside>
+
+    <dialog class="app-dialog project-dialog" id="projectDialog">
+      <div class="dialog-head">
+        <div>
+          <span class="eyebrow">云端</span>
+          <h2>我的论文项目</h2>
+        </div>
+        <button class="icon-btn ghost" data-close-dialog="projectDialog" type="button" aria-label="关闭" title="关闭">
+          <svg><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div class="dialog-callout" id="projectCallout">
+          登录后可跨设备保存论文。未登录时，当前内容仍会自动保存在这台设备。
+        </div>
+        <div class="project-list" id="projectList"></div>
+      </div>
+      <div class="dialog-actions">
+        <button class="command-btn" id="projectLogin" type="button">
+          <svg><use href="#icon-user"></use></svg>
+          登录账户
+        </button>
+        <button class="command-btn primary" id="createCloudProject" type="button">
+          <svg><use href="#icon-plus"></use></svg>
+          新建项目
+        </button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog auth-dialog" id="authDialog">
+      <div class="dialog-head">
+        <div>
+          <span class="eyebrow">账户</span>
+          <h2 id="authTitle">登录并同步论文</h2>
+        </div>
+        <button class="icon-btn ghost" data-close-dialog="authDialog" type="button" aria-label="关闭" title="关闭">
+          <svg><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div id="signedOutPanel">
+          <div class="segmented-control" aria-label="登录或注册">
+            <button class="active" id="loginMode" type="button">登录</button>
+            <button id="registerMode" type="button">注册</button>
+          </div>
+          <form class="auth-form" id="authForm">
+            <label id="authNameField" hidden>
+              姓名
+              <input id="authName" type="text" autocomplete="name" maxlength="40" />
+            </label>
+            <label>
+              邮箱
+              <input id="authEmail" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              密码
+              <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+            </label>
+            <p class="form-error" id="authError" role="alert"></p>
+            <button class="command-btn primary full" id="authSubmit" type="submit">登录</button>
+          </form>
+        </div>
+        <div class="account-panel" id="signedInPanel" hidden>
+          <span class="account-avatar" id="accountAvatar">U</span>
+          <strong id="accountName">用户</strong>
+          <span id="accountEmail">user@example.com</span>
+          <p>当前论文会自动同步到云端，可在其他设备登录后继续编辑。</p>
+        </div>
+      </div>
+      <div class="dialog-actions" id="accountActions" hidden>
+        <button class="command-btn danger-text" id="logoutButton" type="button">退出登录</button>
+        <button class="command-btn primary" id="openProjectsFromAccount" type="button">查看项目</button>
+      </div>
+    </dialog>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
     <input id="projectFileInput" type="file" accept="application/json,.json" hidden />
     <input id="imageFileInput" type="file" accept="image/*" hidden />

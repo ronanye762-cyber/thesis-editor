@@ -1,14 +1,14 @@
 {
   "name": "thesis-editor",
-  "version": "1.0.0",
-  "description": "Full-stack MVP for the thesis formatting editor.",
+  "version": "2.0.0",
+  "description": "Production-ready structured thesis formatting editor for Vercel.",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
     "dev": "NODE_ENV=development node src/server.js",
     "build": "npm run check",
-    "check": "node --check src/server.js && node --check src/router.js && node --check src/storage.js && node --check src/auth.js && node --check src/exporters.js && node --check src/format-checker.js && node --check scripts/smoke-test.js",
+    "check": "node --check app.js && node --check public/app.js && node --check src/server.js && node --check src/router.js && node --check src/storage.js && node --check src/auth.js && node --check src/exporters.js && node --check src/format-checker.js && node --check scripts/smoke-test.js && node scripts/verify-static.js",
     "smoke": "node scripts/smoke-test.js"
   },
   "engines": {

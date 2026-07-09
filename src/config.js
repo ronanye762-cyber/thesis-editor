@@ -28,4 +28,7 @@ module.exports = {
   maxJsonBytes: readNumber("MAX_JSON_BYTES", 5 * 1024 * 1024),
   maxAssetBytes: readNumber("MAX_ASSET_BYTES", 5 * 1024 * 1024),
   corsOrigin: process.env.CORS_ORIGIN || "*",
+  redisUrl: process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "",
+  redisToken: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "",
+  storagePrefix: process.env.STORAGE_PREFIX || "thesis-editor-v1",
 };

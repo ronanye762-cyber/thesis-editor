@@ -6,6 +6,7 @@ const {
   createId,
   now,
   readCollection,
+  storageMode,
   writeCollection,
 } = require("./storage");
 const {
@@ -29,7 +30,13 @@ async function route(req, res) {
 
   try {
     if (req.method === "GET" && pathname === "/health") {
-      sendJson(res, 200, { ok: true, service: "thesis-editor-backend", time: now() });
+      sendJson(res, 200, {
+        ok: true,
+        service: "thesis-editor-backend",
+        storage: storageMode(),
+        persistent: storageMode() === "upstash" || !appConfig.isVercel,
+        time: now(),
+      });
       return;
     }
 
@@ -52,24 +59,24 @@ async function route(req, res) {
 async function routeApi(req, res, pathname) {
   if (req.method === "POST" && pathname === "/api/auth/register") {
     const body = await readJsonBody(req);
-    sendJson(res, 201, { ok: true, ...register(body) });
+    sendJson(res, 201, { ok: true, ...(await register(body)) });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/auth/login") {
     const body = await readJsonBody(req);
-    sendJson(res, 200, { ok: true, ...login(body) });
+    sendJson(res, 200, { ok: true, ...(await login(body)) });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/auth/logout") {
-    logout(req);
+    await logout(req);
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (req.method === "GET" && pathname === "/api/me") {
-    const user = requireUser(req);
+    const user = await requireUser(req);
     sendJson(res, 200, { ok: true, user: pickPublicUser(user) });
     return;
   }
@@ -95,7 +102,7 @@ async function routeApi(req, res, pathname) {
   }
 
   if (req.method === "POST" && pathname === "/api/format/check") {
-    const user = requireUser(req);
+    const user = await requireUser(req);
     const body = await readJsonBody(req);
     const project = await resolveProjectForBody(user, body);
     sendJson(res, 200, { ok: true, result: checkProject(project) });
@@ -106,11 +113,11 @@ async function routeApi(req, res, pathname) {
 }
 
 async function routeProjects(req, res, pathname) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const id = pathId(pathname, "/api/projects");
 
   if (req.method === "GET" && !id) {
-    const projects = readCollection("projects")
+    const projects = (await readCollection("projects"))
       .filter((project) => project.ownerId === user.id)
       .map(projectListItem);
     sendJson(res, 200, { ok: true, projects });
@@ -120,9 +127,9 @@ async function routeProjects(req, res, pathname) {
   if (req.method === "POST" && !id) {
     const body = await readJsonBody(req);
     const project = normalizeProjectInput(body, user.id);
-    const projects = readCollection("projects");
+    const projects = await readCollection("projects");
     projects.push(project);
-    writeCollection("projects", projects);
+    await writeCollection("projects", projects);
     sendJson(res, 201, { ok: true, project });
     return;
   }
@@ -132,7 +139,7 @@ async function routeProjects(req, res, pathname) {
     return;
   }
 
-  const projects = readCollection("projects");
+  const projects = await readCollection("projects");
   const index = projects.findIndex((project) => project.id === id && project.ownerId === user.id);
   if (index < 0) {
     sendError(res, 404, "Project not found");
@@ -146,21 +153,30 @@ async function routeProjects(req, res, pathname) {
 
   if (req.method === "PUT" || req.method === "PATCH") {
     const body = await readJsonBody(req);
+    if (body.revision !== undefined && Number(body.revision) !== Number(projects[index].revision || 1)) {
+      sendJson(res, 409, {
+        ok: false,
+        error: "云端项目已在其他位置更新，请重新加载后再保存",
+        project: projects[index],
+      });
+      return;
+    }
     projects[index] = {
       ...projects[index],
       ...allowedProjectPatch(body),
       ownerId: user.id,
       id: projects[index].id,
       updatedAt: now(),
+      revision: Number(projects[index].revision || 1) + 1,
     };
-    writeCollection("projects", projects);
+    await writeCollection("projects", projects);
     sendJson(res, 200, { ok: true, project: projects[index] });
     return;
   }
 
   if (req.method === "DELETE") {
     projects.splice(index, 1);
-    writeCollection("projects", projects);
+    await writeCollection("projects", projects);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -169,11 +185,11 @@ async function routeProjects(req, res, pathname) {
 }
 
 async function routeTemplates(req, res, pathname) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const id = pathId(pathname, "/api/templates");
 
   if (req.method === "GET" && !id) {
-    const templates = readCollection("templates").filter((template) => template.isSystem || template.ownerId === user.id);
+    const templates = (await readCollection("templates")).filter((template) => template.isSystem || template.ownerId === user.id);
     sendJson(res, 200, { ok: true, templates });
     return;
   }
@@ -190,9 +206,9 @@ async function routeTemplates(req, res, pathname) {
       createdAt: now(),
       updatedAt: now(),
     };
-    const templates = readCollection("templates");
+    const templates = await readCollection("templates");
     templates.push(template);
-    writeCollection("templates", templates);
+    await writeCollection("templates", templates);
     sendJson(res, 201, { ok: true, template });
     return;
   }
@@ -202,7 +218,7 @@ async function routeTemplates(req, res, pathname) {
     return;
   }
 
-  const templates = readCollection("templates");
+  const templates = await readCollection("templates");
   const index = templates.findIndex((template) => template.id === id && template.ownerId === user.id && !template.isSystem);
   if (index < 0) {
     sendError(res, 404, "Editable template not found");
@@ -223,14 +239,14 @@ async function routeTemplates(req, res, pathname) {
       rules: body.rules && typeof body.rules === "object" ? body.rules : templates[index].rules,
       updatedAt: now(),
     };
-    writeCollection("templates", templates);
+    await writeCollection("templates", templates);
     sendJson(res, 200, { ok: true, template: templates[index] });
     return;
   }
 
   if (req.method === "DELETE") {
     templates.splice(index, 1);
-    writeCollection("templates", templates);
+    await writeCollection("templates", templates);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -239,10 +255,10 @@ async function routeTemplates(req, res, pathname) {
 }
 
 async function routeAssets(req, res, pathname) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const rawMatch = pathname.match(/^\/api\/assets\/([^/]+)\/raw$/);
   if (rawMatch && req.method === "GET") {
-    const asset = readCollection("assets").find((item) => item.id === rawMatch[1] && item.ownerId === user.id);
+    const asset = (await readCollection("assets")).find((item) => item.id === rawMatch[1] && item.ownerId === user.id);
     if (!asset) {
       sendError(res, 404, "Asset not found");
       return;
@@ -254,7 +270,7 @@ async function routeAssets(req, res, pathname) {
   const id = pathId(pathname, "/api/assets");
 
   if (req.method === "GET" && !id) {
-    const assets = readCollection("assets")
+    const assets = (await readCollection("assets"))
       .filter((asset) => asset.ownerId === user.id)
       .map(({ base64, ...asset }) => ({ ...asset, url: `/api/assets/${asset.id}/raw` }));
     sendJson(res, 200, { ok: true, assets });
@@ -278,18 +294,18 @@ async function routeAssets(req, res, pathname) {
       createdAt: now(),
       updatedAt: now(),
     };
-    const assets = readCollection("assets");
+    const assets = await readCollection("assets");
     assets.push(asset);
-    writeCollection("assets", assets);
+    await writeCollection("assets", assets);
     const { base64, ...publicAsset } = asset;
     sendJson(res, 201, { ok: true, asset: { ...publicAsset, url: `/api/assets/${asset.id}/raw` } });
     return;
   }
 
   if (id && req.method === "DELETE") {
-    const assets = readCollection("assets");
+    const assets = await readCollection("assets");
     const next = assets.filter((asset) => !(asset.id === id && asset.ownerId === user.id));
-    writeCollection("assets", next);
+    await writeCollection("assets", next);
     sendJson(res, 200, { ok: true, deleted: next.length !== assets.length });
     return;
   }
@@ -298,7 +314,7 @@ async function routeAssets(req, res, pathname) {
 }
 
 async function routeExports(req, res, pathname) {
-  const user = requireUser(req);
+  const user = await requireUser(req);
   const body = await readJsonBody(req);
   const project = await resolveProjectForBody(user, body);
   const filenameBase = safeFileName(`${project.metadata?.title || project.title || "论文"}_${project.metadata?.author || "作者"}`);
@@ -325,7 +341,7 @@ async function resolveProjectForBody(user, body) {
     return normalizeProjectForExport(body.project, user.id);
   }
   if (body.projectId) {
-    const project = readCollection("projects").find((item) => item.id === body.projectId && item.ownerId === user.id);
+    const project = (await readCollection("projects")).find((item) => item.id === body.projectId && item.ownerId === user.id);
     if (!project) throw Object.assign(new Error("Project not found"), { statusCode: 404 });
     return project;
   }
@@ -340,7 +356,9 @@ function normalizeProjectInput(body, ownerId) {
     title: nonEmpty(body.title || body.metadata?.title, "未命名论文"),
     metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
     template: body.template && typeof body.template === "object" ? body.template : {},
+    sections: normalizeSections(body.sections),
     content: String(body.content || ""),
+    revision: 1,
     createdAt,
     updatedAt: createdAt,
   };
@@ -353,7 +371,9 @@ function normalizeProjectForExport(project, ownerId) {
     title: nonEmpty(project.title || project.metadata?.title, "未命名论文"),
     metadata: project.metadata && typeof project.metadata === "object" ? project.metadata : {},
     template: project.template && typeof project.template === "object" ? project.template : {},
+    sections: normalizeSections(project.sections),
     content: String(project.content || ""),
+    revision: Number(project.revision || 1),
     createdAt: project.createdAt || now(),
     updatedAt: project.updatedAt || now(),
   };
@@ -364,6 +384,7 @@ function allowedProjectPatch(body) {
   if (body.title !== undefined) patch.title = nonEmpty(body.title, "未命名论文");
   if (body.metadata !== undefined && typeof body.metadata === "object") patch.metadata = body.metadata;
   if (body.template !== undefined && typeof body.template === "object") patch.template = body.template;
+  if (body.sections !== undefined) patch.sections = normalizeSections(body.sections);
   if (body.content !== undefined) patch.content = String(body.content || "");
   return patch;
 }
@@ -374,9 +395,49 @@ function projectListItem(project) {
     title: project.title,
     paperType: project.metadata?.paperType || "",
     author: project.metadata?.author || "",
+    templateName: project.template?.name || "",
+    wordCount: projectWordCount(project),
+    revision: Number(project.revision || 1),
     updatedAt: project.updatedAt,
     createdAt: project.createdAt,
   };
+}
+
+function normalizeSections(sections) {
+  if (!Array.isArray(sections)) return [];
+  return sections.slice(0, 300).map((section) => ({
+    id: nonEmpty(section.id, createId("sec")),
+    level: Math.min(3, Math.max(1, Number(section.level || 1))),
+    kind: section.kind === "references" ? "references" : undefined,
+    title: String(section.title || "").slice(0, 300),
+    body: String(section.body || ""),
+    table: section.table && typeof section.table === "object"
+      ? {
+          caption: String(section.table.caption || ""),
+          headers: Array.isArray(section.table.headers)
+            ? section.table.headers.map((item) => String(item || "").slice(0, 120)).slice(0, 20)
+            : [],
+          rows: String(section.table.rows || ""),
+        }
+      : undefined,
+    figure: section.figure && typeof section.figure === "object"
+      ? {
+          caption: String(section.figure.caption || ""),
+          alt: String(section.figure.alt || ""),
+          dataUrl: /^data:image\/(?:png|jpe?g|webp|gif);base64,/.test(String(section.figure.dataUrl || ""))
+            ? String(section.figure.dataUrl)
+            : "",
+        }
+      : undefined,
+  }));
+}
+
+function projectWordCount(project) {
+  const metadata = project.metadata && typeof project.metadata === "object" ? Object.values(project.metadata).join("") : "";
+  const sections = Array.isArray(project.sections)
+    ? project.sections.map((section) => `${section.title || ""}${section.body || ""}`).join("")
+    : "";
+  return `${metadata}${sections}`.replace(/\s/g, "").length;
 }
 
 function parseAssetPayload(body) {

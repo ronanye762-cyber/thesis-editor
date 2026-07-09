@@ -185,7 +185,8 @@ svg {
 }
 
 .command-btn,
-.icon-btn {
+.icon-btn,
+.account-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -214,8 +215,22 @@ svg {
   padding: 0;
 }
 
+.account-btn {
+  gap: 6px;
+  min-width: 72px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.account-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 .command-btn:hover,
 .icon-btn:hover,
+.account-btn:hover,
 .template-pill:hover {
   border-color: var(--line-strong);
   background: #f4f7fb;
@@ -359,7 +374,8 @@ h3 {
   font-size: 12px;
 }
 
-.asset-block {
+.asset-block,
+.progress-block {
   padding: 12px 10px;
   border-top: 1px solid var(--line);
 }
@@ -388,6 +404,35 @@ h3 {
 .asset-row:hover {
   color: var(--text);
   background: #ffffff;
+}
+
+.progress-track {
+  height: 7px;
+  margin: 10px 4px 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #e4e9f0;
+}
+
+.progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ok);
+  transition: width 0.25s ease;
+}
+
+.progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 4px 8px;
+  font-size: 12px;
+}
+
+.progress-meta span {
+  color: var(--muted);
 }
 
 .editor-panel {
@@ -1150,6 +1195,279 @@ button.issue-chip {
   background: #fbfcfe;
 }
 
+.app-dialog {
+  width: min(620px, calc(100vw - 40px));
+  max-height: min(720px, calc(100vh - 40px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.app-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.dialog-head,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.dialog-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-head h2 {
+  margin-top: 2px;
+  font-size: 17px;
+}
+
+.dialog-body {
+  max-height: 560px;
+  overflow: auto;
+  padding: 16px;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.dialog-callout {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--brand);
+  color: #344054;
+  background: #f4f7fb;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.project-list {
+  display: grid;
+  gap: 8px;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.project-row.current {
+  border-color: #9bbcf6;
+  background: #f6f9ff;
+}
+
+.project-row-main {
+  min-width: 0;
+}
+
+.project-row-main strong,
+.project-row-main span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-row-main strong {
+  font-size: 14px;
+}
+
+.project-row-main span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.empty-state {
+  padding: 42px 16px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 220px;
+  margin: 0 auto 18px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f3f5f8;
+}
+
+.segmented-control button {
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+}
+
+.segmented-control button.active {
+  color: var(--text);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.auth-dialog {
+  width: min(430px, calc(100vw - 40px));
+}
+
+.auth-form {
+  display: grid;
+  gap: 13px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-form input {
+  width: 100%;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: #ffffff;
+}
+
+.command-btn.full {
+  width: 100%;
+  height: 40px;
+}
+
+.form-error {
+  min-height: 18px;
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
+.account-panel {
+  display: grid;
+  justify-items: center;
+  padding: 12px 0;
+  text-align: center;
+}
+
+.account-avatar {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 12px;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--brand);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.account-panel > span:not(.account-avatar) {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.account-panel p {
+  max-width: 320px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.toast-region {
+  position: fixed;
+  z-index: 100;
+  right: 18px;
+  bottom: 62px;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  min-width: 240px;
+  max-width: 360px;
+  padding: 11px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: #ffffff;
+  background: #1f2937;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+  font-size: 13px;
+  animation: toast-in 0.18s ease-out;
+}
+
+.toast.error {
+  background: #9f3129;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.figure-upload-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.figure-upload-preview img,
+.paper-body img {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  margin: 8px auto;
+  object-fit: contain;
+}
+
+.paper-body figure {
+  margin: 14px 0;
+}
+
+.paper-body figcaption {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 0.88em;
+}
+
 @media (max-width: 1280px) {
   .workspace {
     grid-template-columns: 250px minmax(410px, 1fr) 420px;
@@ -1173,7 +1491,9 @@ button.issue-chip {
   .preview-head,
   .issue-rail,
   .drawer-backdrop,
-  .template-drawer {
+  .template-drawer,
+  .app-dialog,
+  .toast-region {
     display: none !important;
   }
 

@@ -1,207 +1,176 @@
 # 论文格式智能排版工具
 
-这是一个可以直接部署到 Vercel 的全栈 MVP：
+面向大学生论文写作的结构化排版 Web 应用。用户填写封面、摘要、章节正文、表格、图片和参考文献等纯文本字段，系统自动生成标准编号、目录、A4 分页预览，并支持 PDF、Word 和项目备份导出。
 
-- `public/`：论文排版工具前端页面
-- `src/`：Node.js 后端 API
-- `vercel.json`：Vercel 路由与函数配置
-- `data/`：本地开发时的 JSON 数据目录
+## 当前能力
 
-当前版本不依赖任何 npm 第三方包，使用 Node.js 原生模块完成用户、项目、模板、资源、格式检查和导出能力。
+- 结构化填空：无需手动调整字号、缩进和标题编号
+- 三栏联动：目录、填空区与分页预览实时同步
+- 模板预设：本科论文、硕士论文、课程论文和自定义规则
+- 内容组件：三级章节、表格、图片、图题和参考文献
+- 格式检查：封面字段、摘要、标题层级、图表和参考文献检查
+- 自动保存：游客本机保存，登录用户云端同步
+- 项目管理：创建、打开、删除和跨设备继续编辑
+- 冲突保护：云端版本变化时阻止旧内容静默覆盖
+- 文件导出：浏览器打印为 PDF、Word `.doc`、项目 JSON 备份
 
-## 本地启动
+## 技术架构
+
+项目不依赖前端框架和第三方运行库：
+
+- `public/`：正式静态前端
+- `src/`：Node.js API、身份认证、格式检查和导出
+- 本地开发：JSON 文件持久化
+- Vercel：连接 Upstash Redis 后自动切换为云端持久化
+- 未连接数据库：自动降级为本机模式，编辑和导出仍可使用
+
+## 本地运行
+
+需要 Node.js 18 或更高版本。
 
 ```bash
-node src/server.js
+npm run check
+npm start
 ```
 
-默认地址：
-
-```text
-http://127.0.0.1:8787
-```
-
-打开根路径即可访问前端：
+访问：
 
 ```text
 http://127.0.0.1:8787/
 ```
 
-## 部署到 Vercel
+完整冒烟测试：
 
-### 1. 上传到 GitHub
-
-把本文件夹内的所有内容上传到你的 GitHub 仓库根目录，例如：
-
-```text
-README.md
-package.json
-vercel.json
-public/
-src/
-scripts/
-data/.gitkeep
+```bash
+npm run smoke
 ```
 
-如果你的仓库当前只有静态前端文件，建议直接用本文件夹的内容替换仓库根目录，因为现在前端已经放在 `public/` 里，后端入口是 `src/server.js`。
+## Vercel 上线
 
-### 2. 在 Vercel 导入仓库
+### 1. 导入 GitHub 仓库
 
-进入 Vercel 后：
+在 Vercel 选择 `Add New Project`，导入该仓库：
 
-1. 选择 `Add New Project`
-2. Import 你的 GitHub 仓库
-3. Framework Preset 选择 `Other`
-4. Build Command 使用 `npm run build`
-5. Output Directory 留空
-6. 点击 Deploy
+- Framework Preset：`Other`
+- Root Directory：`./`
+- Build Command：`npm run build`
+- Output Directory：留空
 
-### 3. 配置环境变量
+点击 `Deploy`。此时游客已经可以使用本机自动保存、预览和导出。
 
-Vercel 项目里建议设置：
+### 2. 连接持久化数据库
 
-```text
-DATA_DIR=/tmp/thesis-editor-data
-PUBLIC_DIR=./public
-CORS_ORIGIN=*
-```
-
-不要在 Vercel 里设置 `HOST` 和 `PORT`，Vercel 会自动分配运行端口。
-
-### 4. 验证部署
-
-部署完成后访问：
+在 Vercel 项目中进入：
 
 ```text
-https://你的项目域名.vercel.app/
+Storage / Marketplace -> Upstash Redis -> Create / Connect
 ```
 
-健康检查接口：
+将数据库连接到当前项目。Vercel 会自动注入以下任一组变量：
 
 ```text
-https://你的项目域名.vercel.app/health
+KV_REST_API_URL
+KV_REST_API_TOKEN
 ```
 
-如果 `/health` 返回：
+或：
+
+```text
+UPSTASH_REDIS_REST_URL
+UPSTASH_REDIS_REST_TOKEN
+```
+
+代码会自动识别，不需要把密钥写进仓库。
+
+### 3. 重新部署
+
+连接数据库后，在 `Deployments` 中对最新部署选择 `Redeploy`，然后访问：
+
+```text
+https://你的域名.vercel.app/health
+```
+
+正式云端模式应返回：
 
 ```json
 {
   "ok": true,
-  "service": "thesis-editor-backend"
+  "storage": "upstash",
+  "persistent": true
 }
 ```
 
-说明后端已经成功运行。
-
-## 重要说明
-
-当前版本为了快速上线，使用 JSON 文件存储数据。本地运行时数据会保存在 `data/`；部署到 Vercel 后，数据会保存在 `/tmp/thesis-editor-data`。
-
-这适合 MVP 演示和投递作品集，但不适合长期保存真实论文数据。正式上线建议把数据层迁移到 Supabase、PostgreSQL、Neon、Vercel Postgres 或其他数据库。
+如果返回 `"persistent": false`，页面仍可本机使用，但注册和云端项目会被禁用，避免误导用户。
 
 ## 环境变量
 
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PORT` | `8787` | 本地服务端口 |
+| `HOST` | `127.0.0.1` | 本地监听地址 |
+| `DATA_DIR` | `./data` | 本地 JSON 数据目录 |
+| `PUBLIC_DIR` | `./public` | 前端静态文件目录 |
+| `SESSION_TTL_DAYS` | `7` | 登录有效天数 |
+| `MAX_JSON_BYTES` | `5242880` | 项目请求大小限制 |
+| `MAX_ASSET_BYTES` | `5242880` | 单个资源大小限制 |
+| `STORAGE_PREFIX` | `thesis-editor-v1` | Redis 数据键前缀 |
+
+Vercel 不需要设置 `PORT`、`HOST`、`DATA_DIR` 或 `PUBLIC_DIR`。
+
+## 主要 API
+
 ```text
-PORT=8787
-HOST=127.0.0.1
-DATA_DIR=./data
-PUBLIC_DIR=./public
-SESSION_TTL_DAYS=7
-MAX_JSON_BYTES=5242880
-MAX_ASSET_BYTES=5242880
-CORS_ORIGIN=*
+GET    /health
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/logout
+GET    /api/me
+
+GET    /api/projects
+POST   /api/projects
+GET    /api/projects/:id
+PUT    /api/projects/:id
+DELETE /api/projects/:id
+
+GET    /api/templates
+POST   /api/templates
+PUT    /api/templates/:id
+DELETE /api/templates/:id
+
+GET    /api/assets
+POST   /api/assets
+GET    /api/assets/:id/raw
+DELETE /api/assets/:id
+
+POST   /api/format/check
+POST   /api/export/word
+POST   /api/export/print-html
 ```
 
-当前版本不会自动读取 `.env` 文件。如需本地使用环境变量，请在命令前设置：
-
-```bash
-PORT=9000 DATA_DIR=./data node src/server.js
-```
-
-## API
-
-所有需要登录的接口使用：
+除健康检查和注册登录外，API 使用：
 
 ```text
 Authorization: Bearer <token>
 ```
 
-### 基础接口
-
-```http
-GET /health
-POST /api/auth/register
-POST /api/auth/login
-POST /api/auth/logout
-GET /api/me
-```
-
-### 论文项目
-
-```http
-GET /api/projects
-POST /api/projects
-GET /api/projects/:id
-PUT /api/projects/:id
-DELETE /api/projects/:id
-```
-
-项目数据结构兼容当前前端：
-
-```json
-{
-  "title": "论文格式智能排版工具设计",
-  "metadata": {
-    "school": "示例大学",
-    "paperType": "本科毕业论文",
-    "title": "论文格式智能排版工具设计",
-    "author": "学生示例",
-    "supervisor": "导师示例",
-    "keywords": "论文排版；富文本编辑器"
-  },
-  "template": {
-    "name": "通用本科论文模板",
-    "fontSize": "15px",
-    "lineHeight": "1.75"
-  },
-  "content": "<h1>第一章 绪论</h1><p>正文内容...</p>"
-}
-```
-
-### 模板与资源
-
-```http
-GET /api/templates
-POST /api/templates
-GET /api/templates/:id
-PUT /api/templates/:id
-DELETE /api/templates/:id
-
-GET /api/assets
-POST /api/assets
-GET /api/assets/:id/raw
-DELETE /api/assets/:id
-```
-
-### 格式检查与导出
-
-```http
-POST /api/format/check
-POST /api/export/word
-POST /api/export/print-html
-```
-
-## 验证
+## 上线前检查
 
 ```bash
 npm run check
 npm run smoke
 ```
 
-## 后续升级路线
+再完成以下人工检查：
 
-- 将 JSON 文件持久化迁移到数据库
-- 增加正式用户系统和权限控制
-- 前端接入后端项目保存接口，替代纯 localStorage
-- 增加学校模板库、版本历史和多人协作
-- 增加真正的 PDF 渲染服务，例如 Playwright / Puppeteer
+1. `/health` 显示 `persistent: true`
+2. 注册后创建项目，刷新页面仍能恢复
+3. 另一浏览器登录后能打开同一项目
+4. PDF 打印预览和 Word 文件可正常打开
+5. Vercel 域名全程使用 HTTPS
+
+## 已知边界
+
+- PDF 通过浏览器打印对话框生成，以保持中文字体和分页效果
+- Word 导出为兼容 Microsoft Word/WPS 的 `.doc` HTML 文档
+- 单张内嵌图片限制为 3 MB，避免浏览器本地存储溢出
+- 当前版本适合个人论文写作，尚未提供多人实时协作
