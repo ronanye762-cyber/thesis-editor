@@ -1,7 +1,9 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
-process.env.DATA_DIR=fs.mkdtempSync('/private/tmp/thesis-storage-test-');
+const os=require('node:os');
+const path=require('node:path');
+process.env.DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'thesis-storage-test-'));
 for(const key of ['KV_REST_API_URL','KV_REST_API_TOKEN','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN'])delete process.env[key];
 const {mutateCollection,readCollection}=require('../src/storage');
 test('simultaneous writes to different projects are retained',async()=>{
