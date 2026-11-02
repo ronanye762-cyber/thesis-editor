@@ -52,6 +52,9 @@ async function main() {
       "/api/projects",
       {
         title: "后端冒烟测试论文",
+        formatReady:true,
+        formatRules:require('../public/document-model').defaults,
+        requirementsText:'A4 纸，正文宋体小四，1.5 倍行距。',
         metadata: {
           school: "示例大学",
           title: "后端冒烟测试论文",
@@ -128,7 +131,8 @@ async function main() {
       body: JSON.stringify({ projectId: created.project.id }),
     });
     assert(word.ok, "word export should succeed");
-    assert((await word.text()).includes("后端冒烟测试论文"), "word export should include title");
+    assert(word.headers.get('content-type').includes('wordprocessingml'), 'word export should be DOCX');
+    assert(Buffer.from(await word.arrayBuffer()).subarray(0,2).toString()==='PK', 'word export should be an OOXML ZIP');
 
     await request("POST", "/api/auth/logout", {}, token);
     console.log("Smoke test passed");

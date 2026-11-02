@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>论文格式智能排版工具</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./workflow.css" />
   </head>
   <body>
     <svg class="sprite" aria-hidden="true">
@@ -104,7 +105,12 @@
       </symbol>
     </svg>
 
-    <div class="app-shell">
+    <section class="requirements-screen" id="requirementsScreen" aria-labelledby="setupTitle">
+      <div class="setup-brand"><span class="brand-mark">格</span><strong>格式助手</strong><span>专注内容，格式交给我们</span></div>
+      <div class="setup-layout"><div class="setup-intro"><span class="eyebrow">从要求，到成稿</span><h1 id="setupTitle">先告诉我们，论文应该怎样排版</h1><p>粘贴学校或老师的完整格式要求。我们会据此生成排版格式，你只需专注写作。</p><div class="setup-steps"><span>01 输入要求</span><span>02 编写论文</span><span>03 导出成稿</span></div></div>
+      <form class="requirements-card" id="requirementsForm"><label for="requirementsInput">论文格式要求</label><textarea id="requirementsInput" rows="13" maxlength="30000" required placeholder="例如：A4 纸；上边距 2.8cm，下边距 2cm，左右各 2.5cm。正文宋体小四、1.5 倍行距、首行缩进两字符；一级标题黑体三号居中；图表按章编号；参考文献采用 GB/T 7714，正文引用为上标。"></textarea><p class="input-hint">可一次粘贴封面、正文、标题、图表、页眉页脚与参考文献的要求。</p><p id="requirementsError" class="form-error" role="alert"></p><button class="command-btn primary setup-submit" id="startWriting" type="submit">生成格式，开始写作</button><div class="setup-secondary"><button class="command-btn" id="continueDraft" type="button" hidden>继续已有草稿</button><button class="command-btn" id="cancelRequirements" type="button" hidden>返回编辑，保留原格式</button></div><p class="service-status" id="setupServiceStatus" role="status">正在连接排版服务…</p></form></div>
+    </section>
+    <div class="app-shell" id="workbench" hidden>
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark"><svg><use href="#icon-file-text"></use></svg></span>
@@ -124,6 +130,9 @@
         </div>
 
         <div class="top-actions">
+          <div class="attachment-control"><button class="command-btn attachment-button" id="addAttachment" type="button" aria-label="在光标处插入附件" aria-haspopup="menu"><svg><use href="#icon-plus"></use></svg>插入附件</button><div class="attachment-menu" id="attachmentMenu" role="menu" hidden><button type="button" role="menuitem" data-insert-kind="figure">图片</button><button type="button" role="menuitem" data-insert-kind="table">表格图片</button><button type="button" role="menuitem" data-insert-kind="equation">公式图片</button><button type="button" role="menuitem" data-insert-kind="reference">文献引用</button></div></div>
+          <button class="command-btn" id="undoEdit" type="button" disabled>撤销</button><button class="command-btn" id="redoEdit" type="button" disabled>重做</button>
+          <button class="command-btn" id="editRequirements" type="button">调整格式要求</button>
           <button class="command-btn" id="projectCenter" type="button">
             <svg><use href="#icon-folder"></use></svg>
             项目
@@ -142,7 +151,7 @@
           </button>
           <button class="command-btn" id="openTemplate" type="button">
             <svg><use href="#icon-settings"></use></svg>
-            论文信息 / 模板
+            论文信息
           </button>
           <button class="command-btn" id="runCheck" type="button">
             <svg><use href="#icon-check"></use></svg>
@@ -231,9 +240,9 @@
           <div class="preview-head">
             <div>
               <span class="eyebrow">预览</span>
-              <h2>分页效果</h2>
+              <h2>排版预览</h2><span id="compileStatus" role="status">等待排版</span>
             </div>
-            <div class="zoom-controls">
+            <div class="zoom-controls" hidden>
               <button class="icon-btn" id="zoomOut" type="button" aria-label="缩小" title="缩小">
                 <svg><use href="#icon-minus"></use></svg>
               </button>
@@ -244,7 +253,7 @@
             </div>
           </div>
           <div class="preview-scroll">
-            <div class="preview-pages" id="previewPages"></div>
+            <p class="preview-error" id="previewError" role="alert" hidden></p><div class="preview-empty" id="previewEmpty"><svg><use href="#icon-file-text"></use></svg><h3>从第一段开始</h3><p>内容将自动排版，并在这里显示完整预览。</p></div><div class="preview-pages" id="previewPages"><iframe id="compiledPdf" title="论文排版 PDF 预览" hidden></iframe></div>
           </div>
         </section>
       </main>
@@ -330,7 +339,7 @@
           </div>
         </section>
 
-        <section class="drawer-section">
+        <section class="drawer-section" id="legacyTemplateControls" hidden>
           <h3>模板规则</h3>
         <label>
           模板预设
@@ -394,8 +403,8 @@
       </div>
 
       <div class="drawer-actions">
-        <button class="command-btn" id="resetTemplate" type="button">恢复默认</button>
-        <button class="command-btn primary" id="applyTemplate" type="button">应用模板</button>
+        <button hidden class="command-btn" id="resetTemplate" type="button">恢复默认</button>
+        <button class="command-btn primary" id="applyTemplate" type="button">保存论文信息</button>
       </div>
     </aside>
 
@@ -473,10 +482,15 @@
       </div>
     </dialog>
 
+    <dialog class="app-dialog attachment-dialog" id="attachmentDialog" aria-labelledby="attachmentTitle"><form id="attachmentForm"><div class="dialog-head"><h2 id="attachmentTitle">插入图片</h2><button class="icon-btn" type="button" data-close-dialog="attachmentDialog" aria-label="关闭">×</button></div><div class="dialog-body field-stack"><input id="attachmentKind" type="hidden" /><label class="form-field"><span>选择图片</span><input id="attachmentFile" type="file" accept="image/png,image/jpeg,image/webp" required /></label><img class="attachment-preview" id="attachmentPreview" alt="待插入的图片预览" hidden /><label class="form-field"><span>图题 / 表题 / 说明</span><input id="attachmentCaption" type="text" maxlength="1000" /></label><label class="form-field"><span>图片说明（用于辅助阅读）</span><input id="attachmentAlt" type="text" maxlength="1000" /></label><label class="form-field"><span id="attachmentWidthLabel">85% 正文宽度</span><input id="attachmentWidth" type="range" min="10" max="100" value="85" /></label><label class="check-field"><input id="attachmentNumbered" type="checkbox" checked />自动编号</label><p class="input-hint">图片与标题保持在一起，当前页放不下时整体换页。过长的表格请拆成多张上传。</p><p id="attachmentError" class="form-error" role="alert"></p></div><div class="dialog-actions"><button class="command-btn" type="button" data-close-dialog="attachmentDialog">取消</button><button class="command-btn primary" id="attachmentSubmit" type="submit">保存并插入</button></div></form></dialog>
+    <dialog class="app-dialog reference-dialog" id="referenceDialog" aria-labelledby="referenceTitle"><div class="dialog-head"><h2 id="referenceTitle">参考文献与上标引用</h2><button class="icon-btn" type="button" data-close-dialog="referenceDialog" aria-label="关闭">×</button></div><div class="dialog-body"><div class="reference-choices" id="referenceChoices"></div><button class="command-btn" id="referenceNew" type="button">录入新文献</button><form class="field-stack" id="referenceForm"><input id="referenceEditId" type="hidden" /><div class="form-grid"><label>作者<input id="reference-authors" type="text" /></label><label>文献类型<select id="reference-type"><option value="J">期刊 J</option><option value="M">专著 M</option><option value="D">学位论文 D</option><option value="C">会议文献 C</option><option value="R">报告 R</option><option value="EB/OL">网络文献 EB/OL</option></select></label><label class="wide">文献题名<input id="reference-title" type="text" /></label><label>期刊 / 出版来源<input id="reference-source" type="text" /></label><label>年份<input id="reference-year" type="text" /></label><label>卷<input id="reference-volume" type="text" /></label><label>期<input id="reference-issue" type="text" /></label><label>页码<input id="reference-pages" type="text" /></label><label>DOI<input id="reference-doi" type="text" /></label></div><label class="form-field"><span>或录入已按要求整理的完整著录信息</span><textarea id="reference-raw" rows="3"></textarea></label><label class="check-field"><input id="referenceInsert" type="checkbox" checked />保存后在正文光标处插入上标引用</label><p class="form-error" id="referenceError" role="alert"></p><button class="command-btn primary" type="submit">保存文献</button></form></div></dialog>
     <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
     <input id="projectFileInput" type="file" accept="application/json,.json" hidden />
     <input id="imageFileInput" type="file" accept="image/*" hidden />
+    <script src="./document-model.js"></script>
+    <script src="./draft-store.js"></script>
+    <script src="./workflow.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

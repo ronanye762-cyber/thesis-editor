@@ -1,11 +1,16 @@
 const appConfig = require("./config");
+const Model = require('../public/document-model');
+const {parseRequirements,configured:aiConfigured}=require('./ai-parser');
+const {compileProject,compilerInfo}=require('./compiler');
+const {buildDocx}=require('./docx-exporter');
 const { login, logout, pickPublicUser, register, requireUser } = require("./auth");
-const { buildPrintHtml, buildWordDocument, safeFileName } = require("./exporters");
+const { safeFileName } = require("./exporters");
 const { checkProject } = require("./format-checker");
 const {
   createId,
   now,
   readCollection,
+  mutateCollection,
   storageMode,
   writeCollection,
 } = require("./storage");
@@ -57,6 +62,27 @@ async function route(req, res) {
 }
 
 async function routeApi(req, res, pathname) {
+  if(req.method==='GET' && pathname==='/api/capabilities'){
+    sendJson(res,200,{ok:true,aiConfigured:aiConfigured(),compiler:compilerInfo(),maxRequestBytes:appConfig.isVercel?4*1024*1024:appConfig.maxJsonBytes});return;
+  }
+  if(req.method==='POST' && pathname==='/api/requirements/parse'){
+    limitExpensiveRequest(req,'parse',10);
+    const body=await readJsonBody(req,128*1024);
+    sendJson(res,200,{ok:true,...await parseRequirements(body.requirements)});return;
+  }
+  if(req.method==='POST' && ['/api/preview','/api/export/pdf','/api/export/word'].includes(pathname)){
+    limitExpensiveRequest(req,'render',40);
+    const body=await readJsonBody(req);
+    const project=body.project ? Model.normalizeProject(body.project) : await resolveProjectForBody(await requireUser(req),body);
+    if(!project.formatReady)throw Object.assign(new Error('请先输入并解析论文格式要求。'),{statusCode:400});
+    const filename=safeFileName(`${project.metadata?.title || project.title || '论文'}_${project.metadata?.author || '作者'}`);
+    if(pathname==='/api/export/word'){
+      sendBuffer(res,200,await buildDocx(project),'application/vnd.openxmlformats-officedocument.wordprocessingml.document',{'Content-Disposition':contentDisposition(`${filename}.docx`),'Cache-Control':'no-store'});
+    }else{
+      sendBuffer(res,200,await compileProject(project),'application/pdf',{'Content-Disposition':`${pathname==='/api/preview'?'inline':'attachment'}; filename="thesis.pdf"; filename*=UTF-8''${encodeURIComponent(filename+'.pdf')}`,'Cache-Control':'no-store'});
+    }
+    return;
+  }
   if (req.method === "POST" && pathname === "/api/auth/register") {
     const body = await readJsonBody(req);
     sendJson(res, 201, { ok: true, ...(await register(body)) });
@@ -96,10 +122,6 @@ async function routeApi(req, res, pathname) {
     return;
   }
 
-  if (pathname.startsWith("/api/export")) {
-    await routeExports(req, res, pathname);
-    return;
-  }
 
   if (req.method === "POST" && pathname === "/api/format/check") {
     const user = await requireUser(req);
@@ -115,73 +137,35 @@ async function routeApi(req, res, pathname) {
 async function routeProjects(req, res, pathname) {
   const user = await requireUser(req);
   const id = pathId(pathname, "/api/projects");
-
   if (req.method === "GET" && !id) {
-    const projects = (await readCollection("projects"))
-      .filter((project) => project.ownerId === user.id)
-      .map(projectListItem);
-    sendJson(res, 200, { ok: true, projects });
-    return;
+    sendJson(res, 200, {ok:true,projects:(await readCollection('projects')).filter(p=>p.ownerId===user.id).map(projectListItem)}); return;
   }
-
   if (req.method === "POST" && !id) {
-    const body = await readJsonBody(req);
-    const project = normalizeProjectInput(body, user.id);
-    const projects = await readCollection("projects");
-    projects.push(project);
-    await writeCollection("projects", projects);
-    sendJson(res, 201, { ok: true, project });
-    return;
+    const project=normalizeProjectInput(await readJsonBody(req),user.id);
+    await mutateCollection('projects',rows=>[...rows,project]);
+    sendJson(res,201,{ok:true,project});return;
   }
-
-  if (!id) {
-    sendError(res, 405, "Method not allowed");
-    return;
+  if(!id)return sendError(res,405,'Method not allowed');
+  if(req.method==='GET'){
+    const project=(await readCollection('projects')).find(p=>p.id===id&&p.ownerId===user.id);
+    if(!project)return sendError(res,404,'Project not found');
+    return sendJson(res,200,{ok:true,project});
   }
-
-  const projects = await readCollection("projects");
-  const index = projects.findIndex((project) => project.id === id && project.ownerId === user.id);
-  if (index < 0) {
-    sendError(res, 404, "Project not found");
-    return;
-  }
-
-  if (req.method === "GET") {
-    sendJson(res, 200, { ok: true, project: projects[index] });
-    return;
-  }
-
-  if (req.method === "PUT" || req.method === "PATCH") {
-    const body = await readJsonBody(req);
-    if (body.revision !== undefined && Number(body.revision) !== Number(projects[index].revision || 1)) {
-      sendJson(res, 409, {
-        ok: false,
-        error: "云端项目已在其他位置更新，请重新加载后再保存",
-        project: projects[index],
+  if(['PUT','PATCH','DELETE'].includes(req.method)){
+    const body=req.method==='DELETE'?{}:await readJsonBody(req);let project;
+    try{
+      await mutateCollection('projects',rows=>{
+        const i=rows.findIndex(p=>p.id===id&&p.ownerId===user.id);
+        if(i<0)throw Object.assign(new Error('Project not found'),{statusCode:404});
+        if(req.method==='DELETE'){rows.splice(i,1);return rows;}
+        if(body.revision===undefined || Number(body.revision)!==Number(rows[i].revision || 1))throw Object.assign(new Error('云端项目已更新，请保留本机副本后重新加载。'),{statusCode:409,project:rows[i]});
+        project={...rows[i],...allowedProjectPatch(body),id,ownerId:user.id,updatedAt:now(),revision:Number(rows[i].revision || 1)+1};
+        rows[i]=project;return rows;
       });
-      return;
-    }
-    projects[index] = {
-      ...projects[index],
-      ...allowedProjectPatch(body),
-      ownerId: user.id,
-      id: projects[index].id,
-      updatedAt: now(),
-      revision: Number(projects[index].revision || 1) + 1,
-    };
-    await writeCollection("projects", projects);
-    sendJson(res, 200, { ok: true, project: projects[index] });
-    return;
+    }catch(e){if(e.project)return sendJson(res,409,{ok:false,error:e.message,project:e.project});throw e;}
+    return sendJson(res,200,{ok:true,...(project?{project}:{})});
   }
-
-  if (req.method === "DELETE") {
-    projects.splice(index, 1);
-    await writeCollection("projects", projects);
-    sendJson(res, 200, { ok: true });
-    return;
-  }
-
-  sendError(res, 405, "Method not allowed");
+  sendError(res,405,'Method not allowed');
 }
 
 async function routeTemplates(req, res, pathname) {
@@ -313,29 +297,6 @@ async function routeAssets(req, res, pathname) {
   sendError(res, 405, "Method not allowed");
 }
 
-async function routeExports(req, res, pathname) {
-  const user = await requireUser(req);
-  const body = await readJsonBody(req);
-  const project = await resolveProjectForBody(user, body);
-  const filenameBase = safeFileName(`${project.metadata?.title || project.title || "论文"}_${project.metadata?.author || "作者"}`);
-
-  if (req.method === "POST" && pathname === "/api/export/word") {
-    const html = buildWordDocument(project);
-    sendBuffer(res, 200, Buffer.from(`\ufeff${html}`, "utf8"), "application/msword", {
-      "Content-Disposition": contentDisposition(`${filenameBase}.doc`),
-    });
-    return;
-  }
-
-  if (req.method === "POST" && (pathname === "/api/export/print-html" || pathname === "/api/export/pdf-html")) {
-    const html = buildPrintHtml(project);
-    sendText(res, 200, html, "text/html; charset=utf-8");
-    return;
-  }
-
-  sendError(res, 404, "Export route not found");
-}
-
 async function resolveProjectForBody(user, body) {
   if (body.project && typeof body.project === "object") {
     return normalizeProjectForExport(body.project, user.id);
@@ -357,6 +318,11 @@ function normalizeProjectInput(body, ownerId) {
     metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
     template: body.template && typeof body.template === "object" ? body.template : {},
     sections: normalizeSections(body.sections),
+    schemaVersion:3,
+    references:Model.normalizeProject(body).references,
+    formatRules:Model.normalizeRules(body.formatRules),
+    requirementsText:String(body.requirementsText || '').slice(0,30000),
+    formatReady:body.formatReady===true,
     content: String(body.content || ""),
     revision: 1,
     createdAt,
@@ -372,6 +338,10 @@ function normalizeProjectForExport(project, ownerId) {
     metadata: project.metadata && typeof project.metadata === "object" ? project.metadata : {},
     template: project.template && typeof project.template === "object" ? project.template : {},
     sections: normalizeSections(project.sections),
+    references:Model.normalizeProject(project).references,
+    formatRules:Model.normalizeRules(project.formatRules),
+    requirementsText:String(project.requirementsText || '').slice(0,30000),
+    formatReady:project.formatReady===true,
     content: String(project.content || ""),
     revision: Number(project.revision || 1),
     createdAt: project.createdAt || now(),
@@ -386,6 +356,11 @@ function allowedProjectPatch(body) {
   if (body.template !== undefined && typeof body.template === "object") patch.template = body.template;
   if (body.sections !== undefined) patch.sections = normalizeSections(body.sections);
   if (body.content !== undefined) patch.content = String(body.content || "");
+  if(body.references!==undefined)patch.references=Model.normalizeReferences(body.references);
+  if(body.formatRules!==undefined)patch.formatRules=Model.normalizeRules(body.formatRules);
+  if(body.requirementsText!==undefined)patch.requirementsText=String(body.requirementsText).slice(0,30000);
+  if(body.formatReady!==undefined)patch.formatReady=body.formatReady===true;
+  patch.schemaVersion=3;
   return patch;
 }
 
@@ -403,34 +378,7 @@ function projectListItem(project) {
   };
 }
 
-function normalizeSections(sections) {
-  if (!Array.isArray(sections)) return [];
-  return sections.slice(0, 300).map((section) => ({
-    id: nonEmpty(section.id, createId("sec")),
-    level: Math.min(3, Math.max(1, Number(section.level || 1))),
-    kind: section.kind === "references" ? "references" : undefined,
-    title: String(section.title || "").slice(0, 300),
-    body: String(section.body || ""),
-    table: section.table && typeof section.table === "object"
-      ? {
-          caption: String(section.table.caption || ""),
-          headers: Array.isArray(section.table.headers)
-            ? section.table.headers.map((item) => String(item || "").slice(0, 120)).slice(0, 20)
-            : [],
-          rows: String(section.table.rows || ""),
-        }
-      : undefined,
-    figure: section.figure && typeof section.figure === "object"
-      ? {
-          caption: String(section.figure.caption || ""),
-          alt: String(section.figure.alt || ""),
-          dataUrl: /^data:image\/(?:png|jpe?g|webp|gif);base64,/.test(String(section.figure.dataUrl || ""))
-            ? String(section.figure.dataUrl)
-            : "",
-        }
-      : undefined,
-  }));
-}
+function normalizeSections(sections) { return Model.normalizeSections(sections); }
 
 function projectWordCount(project) {
   const metadata = project.metadata && typeof project.metadata === "object" ? Object.values(project.metadata).join("") : "";
@@ -479,3 +427,14 @@ function contentDisposition(filename) {
 module.exports = {
   route,
 };
+
+const requestWindows=new Map();
+function limitExpensiveRequest(req,kind,limit){
+  // Vercel supplies this header; local deployments use the socket address.
+  const address=appConfig.isVercel?String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'local').split(',')[0]:req.socket?.remoteAddress || 'local';
+  const key=`${kind}:${address}`,time=Date.now();
+  if(requestWindows.size>5000)for(const [k,v]of requestWindows)if(v.expires<time)requestWindows.delete(k);
+  const entry=requestWindows.get(key);
+  if(!entry || entry.expires<time)requestWindows.set(key,{count:1,expires:time+60000});
+  else if(++entry.count>limit)throw Object.assign(new Error('操作较频繁，请稍后重试。'),{statusCode:429});
+}
