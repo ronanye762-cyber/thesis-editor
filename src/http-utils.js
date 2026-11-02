@@ -77,6 +77,18 @@ function corsHeaders() {
 }
 
 function readJsonBody(req, maxBytes = appConfig.maxJsonBytes) {
+  function checked(value){
+    if(!value || typeof value!=='object' || Array.isArray(value))throw Object.assign(new Error('JSON body must be an object'),{statusCode:400});
+    return value;
+  }
+  // Vercel may already have decoded the request before invoking the handler.
+  if(req.body!==undefined){
+    try{
+      const raw=Buffer.isBuffer(req.body)?req.body.toString('utf8'):typeof req.body==='string'?req.body:JSON.stringify(req.body);
+      if(Buffer.byteLength(raw)>maxBytes)throw Object.assign(new Error('Request body is too large'),{statusCode:413});
+      return Promise.resolve(checked(JSON.parse(raw)));
+    }catch(error){return Promise.reject(error.statusCode?error:Object.assign(new Error('Invalid JSON body'),{statusCode:400}));}
+  }
   return new Promise((resolve, reject) => {
     let total = 0;
     const chunks = [];
@@ -98,7 +110,7 @@ function readJsonBody(req, maxBytes = appConfig.maxJsonBytes) {
         return;
       }
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        resolve(checked(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
       } catch (error) {
         reject(Object.assign(new Error("Invalid JSON body"), { statusCode: 400 }));
       }
@@ -122,7 +134,7 @@ function serveStaticFile(res, publicDir, requestPath) {
   const relative = normalized === "/" ? "index.html" : normalized.replace(/^\/+/, "");
   const target = path.resolve(publicDir, relative);
 
-  if (!target.startsWith(publicDir)) {
+  if (target !== publicDir && !target.startsWith(`${publicDir}${path.sep}`)) {
     sendError(res, 403, "Forbidden");
     return true;
   }

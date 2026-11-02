@@ -1,176 +1,114 @@
-# 论文格式智能排版工具
+# 格式助手
 
-面向大学生论文写作的结构化排版 Web 应用。用户填写封面、摘要、章节正文、表格、图片和参考文献等纯文本字段，系统自动生成标准编号、目录、A4 分页预览，并支持 PDF、Word 和项目备份导出。
+用户先输入完整的论文格式要求，系统调用可配置的 AI 服务提取排版规则，再进入目录、正文输入和 PDF 预览三栏界面。正文、图片与引用共同生成 LaTeX，使用真实 XeLaTeX 编译。最终提供 PDF 和可编辑 Word `.docx`，不提供 LaTeX 源文件下载。
 
-## 当前能力
+## 已实现的流程
 
-- 结构化填空：无需手动调整字号、缩进和标题编号
-- 三栏联动：目录、填空区与分页预览实时同步
-- 模板预设：本科论文、硕士论文、课程论文和自定义规则
-- 内容组件：三级章节、表格、图片、图题和参考文献
-- 格式检查：封面字段、摘要、标题层级、图表和参考文献检查
-- 自动保存：游客本机保存，登录用户云端同步
-- 项目管理：创建、打开、删除和跨设备继续编辑
-- 冲突保护：云端版本变化时阻止旧内容静默覆盖
-- 文件导出：浏览器打印为 PDF、Word `.doc`、项目 JSON 备份
-
-## 技术架构
-
-项目不依赖前端框架和第三方运行库：
-
-- `public/`：正式静态前端
-- `src/`：Node.js API、身份认证、格式检查和导出
-- 本地开发：JSON 文件持久化
-- Vercel：连接 Upstash Redis 后自动切换为云端持久化
-- 未连接数据库：自动降级为本机模式，编辑和导出仍可使用
+- 首屏输入/粘贴格式要求，解析成功直接进入编辑，无额外规则核对页。
+- 模板涵盖 A4 页边距、中英文字体、字号、倍数/固定行距、首行缩进、三级标题、页眉页脚、封面、摘要、目录、图表标题与编号等。
+- 顶部“＋ 插入附件”支持图片、表格图片、公式图片与文献引用。
+- 上传对话框保留正文光标；图片独立成行插入，原段落前后文字保留；插入后可调整宽度、替换、修改标题、移动、删除和撤销。
+- 图、表、公式分别编号；图片与标题使用非浮动 LaTeX 块，空间不足时整块换页，保持正文顺序。过长表格提示拆图。
+- 录入参考文献信息或完整著录文本；正文引用为上标；重复引用复用编号；删除引用保留文献信息并标记未引用。
+- 编辑后延迟编译，过期请求不能覆盖新预览；失败保留上次成功 PDF，并明确提示未更新。
+- 草稿及图片保存在 IndexedDB；兼容旧版 localStorage/JSON 项目。账户、云端项目和项目 JSON 备份保留。
+- 云端项目保存使用原子比较更新；失败/冲突会阻止切换到另一项目，本机草稿保留；旧请求不会改写另一项目的版本。
 
 ## 本地运行
 
-需要 Node.js 18 或更高版本。
+需要 Node.js 22 或以上，以及带中文排版包的 TeX Live / XeLaTeX。
 
 ```bash
-npm run check
+npm ci
+cp .env.example .env
+# 编辑 .env，填写 AI_BASE_URL、AI_API_KEY 和 AI_MODEL
 npm start
 ```
 
-访问：
+打开 http://127.0.0.1:8787/ 。`npm start` 自动读取 `.env`。AI 密钥只在服务端使用。
 
-```text
-http://127.0.0.1:8787/
-```
-
-完整冒烟测试：
+Linux 编译依赖可安装为：
 
 ```bash
-npm run smoke
+apt-get update
+apt-get install -y texlive-xetex texlive-lang-chinese texlive-latex-extra texlive-fonts-recommended
 ```
 
-## Vercel 上线
+也可以将 `LATEX_COMMAND` 设置为本机 `xelatex` 的绝对路径。LaTeX 源码从经过校验的规则与转义后的内容生成；不接受用户上传的任意 TeX，编译关闭 shell escape，限制并发与超时，完成后清理临时文件。
 
-### 1. 导入 GitHub 仓库
+## Docker 运行
 
-在 Vercel 选择 `Add New Project`，导入该仓库：
+镜像包含 XeLaTeX、中文包和开源字体，无需在宿主机安装 TeX Live。
 
-- Framework Preset：`Other`
-- Root Directory：`./`
-- Build Command：`npm run build`
-- Output Directory：留空
-
-点击 `Deploy`。此时游客已经可以使用本机自动保存、预览和导出。
-
-### 2. 连接持久化数据库
-
-在 Vercel 项目中进入：
-
-```text
-Storage / Marketplace -> Upstash Redis -> Create / Connect
+```bash
+docker build -t thesis-editor .
+docker run --rm -p 8787:8787 --env-file .env -e HOST=0.0.0.0 -e DATA_DIR=/app/data -v thesis-data:/app/data thesis-editor
 ```
 
-将数据库连接到当前项目。Vercel 会自动注入以下任一组变量：
+单实例本地文件存储用于开发/个人部署；多实例部署请连接 Upstash。
 
-```text
-KV_REST_API_URL
-KV_REST_API_TOKEN
-```
+## AI 服务配置
 
-或：
+| 变量 | 说明 |
+| --- | --- |
+| `AI_BASE_URL` | Chat Completions 兼容服务的基础 URL（如以 `/v1` 结尾），也接受完整 `/chat/completions` 地址 |
+| `AI_API_KEY` | 服务端密钥 |
+| `AI_MODEL` | 服务支持的模型 ID |
+| `AI_RESPONSE_FORMAT` | 默认 `json_object`；供应商不支持该参数时设为 `none` |
+| `AI_TIMEOUT_MS` | 默认 45000 毫秒 |
 
-```text
-UPSTASH_REDIS_REST_URL
-UPSTASH_REDIS_REST_TOKEN
-```
+AI 只处理格式要求，不接收论文正文。普通输入、图片插入和预览只使用已保存的规则并重新编译。模型输出经过结构、范围和枚举校验；冲突、无法表达的要求或无效结果会明确报错，不静默用默认值代替。
 
-代码会自动识别，不需要把密钥写进仓库。
+未配置 AI 时首屏会提示服务未连接，不能把关键词匹配结果当成 AI 解析。模型供应商仍由部署者选择，仓库不包含可用密钥。
 
-### 3. 重新部署
+## Vercel 与独立编译服务
 
-连接数据库后，在 `Deployments` 中对最新部署选择 `Redeploy`，然后访问：
+Vercel 通过 `api/index.js` 处理 API 与静态资源。Node 函数不打包 TeX Live，需要另行运行仓库提供的编译容器。
 
-```text
-https://你的域名.vercel.app/health
-```
+1. 将 Docker 镜像部署到支持长驻容器的平台，使用启动命令 `node compiler/server.js`。
+2. 在编译容器设置 `PORT`，以及至少 24 字符的随机 `LATEX_SERVICE_TOKEN`。编译容器不需要 AI 密钥或数据库凭证。
+3. 在 Vercel 主应用设置 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`LATEX_SERVICE_URL` 和相同的 `LATEX_SERVICE_TOKEN`。
+4. 云端账户/项目还需连接 Upstash，设置 `KV_REST_API_URL` / `KV_REST_API_TOKEN`，或 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`。
+5. 构建命令 `npm run build`，无需设置静态 Output Directory。重新部署后检查 `/health` 和 `/api/capabilities`。
 
-正式云端模式应返回：
+`/health` 的 `persistent: true` 表示持久化模式已配置，不代表数据库读写验收完成；`/api/capabilities` 只报告 AI 配置和编译模式是否存在，不返回任何密钥。仍需用真实服务做首屏解析、预览、账户保存和导出验收。
 
-```json
-{
-  "ok": true,
-  "storage": "upstash",
-  "persistent": true
-}
-```
+Vercel 请求/响应体有平台限制，图片较多的长论文建议使用完整 Docker 部署。前端会在超过当前部署请求上限时提示压缩图片。平台限制参考 [Vercel Functions Limits](https://vercel.com/docs/functions/limitations)，函数超时配置参考 [Maximum Duration](https://vercel.com/docs/functions/configuring-functions/duration)。
 
-如果返回 `"persistent": false`，页面仍可本机使用，但注册和云端项目会被禁用，避免误导用户。
+GitHub Pages 和纯静态 Netlify 托管无法执行 AI 请求与 LaTeX 编译，只适合读取前端资源；完整功能使用 Node / Docker 或 Vercel + 编译服务。
 
-## 环境变量
+## 字体与交付文件
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `PORT` | `8787` | 本地服务端口 |
-| `HOST` | `127.0.0.1` | 本地监听地址 |
-| `DATA_DIR` | `./data` | 本地 JSON 数据目录 |
-| `PUBLIC_DIR` | `./public` | 前端静态文件目录 |
-| `SESSION_TTL_DAYS` | `7` | 登录有效天数 |
-| `MAX_JSON_BYTES` | `5242880` | 项目请求大小限制 |
-| `MAX_ASSET_BYTES` | `5242880` | 单个资源大小限制 |
-| `STORAGE_PREFIX` | `thesis-editor-v1` | Redis 数据键前缀 |
+- 默认 PDF 使用 TeX Live 的 Fandol 中文字体和 TeX Gyre 西文字体，字体会嵌入 PDF。需要学校指定的宋体/黑体或 Times New Roman 时，应在编译环境安装相应授权字体，并通过 `LATEX_FONT_*` 指定真实字体名称。
+- Word 使用同一字号、行距、页边距、标题等规则，正文可编辑，图表和公式保留为图片；收件人的 Word/WPS 需要相应字体。
+- Word 目录为可更新域，打开时允许更新字段。Word 与 PDF 使用不同排版引擎，具体分页可能随 Word/WPS 版本和字体环境变化，不能保证逐页像素一致。
+- 参考文献支持基础著录字段拼接；需要复杂的文献著录细节时可输入完整、已整理的著录文本，不进行联网检索或自动补全。
+- 当前规则模型覆盖三级标题与 A4 常见论文格式；特定学校的精确封面绝对布局、额外审核表或自定义复杂文献样式若无法表达，会在解析时提示，不能假称已经完全应用。
 
-Vercel 不需要设置 `PORT`、`HOST`、`DATA_DIR` 或 `PUBLIC_DIR`。
-
-## 主要 API
-
-```text
-GET    /health
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/auth/logout
-GET    /api/me
-
-GET    /api/projects
-POST   /api/projects
-GET    /api/projects/:id
-PUT    /api/projects/:id
-DELETE /api/projects/:id
-
-GET    /api/templates
-POST   /api/templates
-PUT    /api/templates/:id
-DELETE /api/templates/:id
-
-GET    /api/assets
-POST   /api/assets
-GET    /api/assets/:id/raw
-DELETE /api/assets/:id
-
-POST   /api/format/check
-POST   /api/export/word
-POST   /api/export/print-html
-```
-
-除健康检查和注册登录外，API 使用：
-
-```text
-Authorization: Bearer <token>
-```
-
-## 上线前检查
+## 验证
 
 ```bash
 npm run check
+npm test
 npm run smoke
+npm run test:browser
+# 必须安装 XeLaTeX；生成真实编译的 PDF 与 DOCX 示例到指定临时目录
+node scripts/verify-latex.js /tmp/thesis-output-qa
 ```
 
-再完成以下人工检查：
+浏览器测试默认使用已安装的 Chrome。CI 使用 Playwright Chromium，可在本机执行 `npx playwright install chromium --no-shell` 后设置 `PLAYWRIGHT_CHANNEL=chromium`。浏览器测试对 AI 和预览失败路径使用固定测试响应；真实 AI 供应商尚需部署后验收。LaTeX 验证脚本使用真实 XeLaTeX，无模拟 PDF。
 
-1. `/health` 显示 `persistent: true`
-2. 注册后创建项目，刷新页面仍能恢复
-3. 另一浏览器登录后能打开同一项目
-4. PDF 打印预览和 Word 文件可正常打开
-5. Vercel 域名全程使用 HTTPS
+`.github/workflows/check.yml` 分别执行 Node/浏览器回归与 Linux 真实 LaTeX 编译。前端源文件位于 `public/`；根目录保留静态镜像，修改后运行 `npm run sync`，CI 校验两套文件一致。
 
-## 已知边界
+## 主要接口
 
-- PDF 通过浏览器打印对话框生成，以保持中文字体和分页效果
-- Word 导出为兼容 Microsoft Word/WPS 的 `.doc` HTML 文档
-- 单张内嵌图片限制为 3 MB，避免浏览器本地存储溢出
-- 当前版本适合个人论文写作，尚未提供多人实时协作
+```text
+GET  /health
+GET  /api/capabilities
+POST /api/requirements/parse  { requirements }
+POST /api/preview             { project } -> application/pdf
+POST /api/export/pdf          { project } -> application/pdf
+POST /api/export/word         { project } -> .docx
+```
+
+以上编辑/导出接口支持游客。已登录用户也可用 `projectId` 请求导出（需要 Bearer token）。账户、项目、模板、资源和格式检查的原有 API 保留；项目更新必须提供当前 `revision`，版本冲突返回 409。

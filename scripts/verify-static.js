@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const rootDir = path.resolve(__dirname, "..");
-const mirroredFiles = ["index.html", "styles.css", "app.js"];
+const mirroredFiles = ["index.html", "styles.css", "app.js", "document-model.js", "draft-store.js", "workflow.js", "workflow.css"];
 
 for (const file of mirroredFiles) {
   const root = fs.readFileSync(path.join(rootDir, file));

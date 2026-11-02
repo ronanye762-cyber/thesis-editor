@@ -33,6 +33,7 @@ let cloudProjects = [];
 let cloudAvailable = true;
 let cloudSaveInFlight = false;
 let cloudSavePending = false;
+let cloudSavePromise = null;
 
 function createDefaultState() {
   const project = {
@@ -105,11 +106,12 @@ function createDefaultState() {
     content: "",
   };
   project.content = sectionsToHtml(project.sections, project.template.headingMode);
-  return project;
+  project.requirementsText='';
+  return ThesisModel.normalizeProject(project);
 }
 
 async function init() {
-  loadState();
+  await loadState();
   activeHeadingId = state.sections[0]?.id || "";
   populateDrawer();
   applyTemplateVars();
@@ -118,10 +120,12 @@ async function init() {
   renderAll();
   setZoom(zoom);
   updateAccountUi();
+  Workflow.initialize();
   await restoreSession();
 }
 
-function loadState() {
+async function loadState() {
+  try{const draft=await DraftStore.read();if(draft){state=mergeState(createDefaultState(),draft);return;}}catch(error){console.warn('IndexedDB draft unavailable',error);}
   const saved = localStorage.getItem(stateKey) || localStorage.getItem(legacyStateKey);
   if (saved) {
     try {
@@ -139,18 +143,8 @@ function loadState() {
 }
 
 function mergeState(base, incoming) {
-  const sections = normalizeSections(incoming.sections) || sectionsFromHtml(incoming.content) || base.sections;
-  const merged = {
-    id: incoming.id || null,
-    revision: Number(incoming.revision || 0),
-    clientUpdatedAt: incoming.clientUpdatedAt || incoming.updatedAt || new Date().toISOString(),
-    metadata: { ...base.metadata, ...(incoming.metadata || {}) },
-    template: { ...base.template, ...(incoming.template || {}) },
-    sections,
-    content: "",
-  };
-  merged.content = sectionsToHtml(merged.sections, merged.template.headingMode);
-  return merged;
+  if(!Array.isArray(incoming.sections)&&incoming.content)incoming={...incoming,sections:sectionsFromHtml(incoming.content) || [{id:'sec-recovered',level:1,title:'恢复的正文',body:new DOMParser().parseFromString(incoming.content,'text/html').body.textContent}]};
+  return Workflow.normalizeState(base,incoming);
 }
 
 function bindEvents() {
@@ -174,7 +168,7 @@ function bindEvents() {
   document.getElementById("addReferenceSection").addEventListener("click", ensureReferenceSection);
   document.getElementById("focusMetadata").addEventListener("click", () => jumpToSection("cover"));
 
-  document.getElementById("refreshPreview").addEventListener("click", renderAll);
+
   document.getElementById("runCheck").addEventListener("click", () => {
     const issues = runChecks(collectHeadings());
     issueRailFlash(issues.length);
@@ -182,7 +176,7 @@ function bindEvents() {
 
   document.getElementById("zoomOut").addEventListener("click", () => setZoom(zoom - 0.08));
   document.getElementById("zoomIn").addEventListener("click", () => setZoom(zoom + 0.08));
-  document.getElementById("exportPdf").addEventListener("click", () => window.print());
+  document.getElementById("exportPdf").addEventListener("click", () => Workflow.exportDocument("pdf"));
   document.getElementById("exportWord").addEventListener("click", exportWord);
   document.getElementById("exportProject").addEventListener("click", exportProject);
   document.getElementById("importProject").addEventListener("click", () => projectFileInput.click());
@@ -323,51 +317,7 @@ function metaSelect(label, key, value, options) {
   `;
 }
 
-function sectionCardHtml(section, index, displayTitle) {
-  const isReference = section.kind === "references";
-  const hasTable = Boolean(section.table);
-  const hasFigure = Boolean(section.figure);
-  return `
-    <section class="section-card" id="form-${section.id}" data-section-id="${section.id}">
-      <div class="section-card-head">
-        <span class="section-number">${index + 1}</span>
-        <div class="auto-title-preview">${escapeHtml(displayTitle)}</div>
-        <select class="level-select" data-field="level" aria-label="章节层级">
-          <option value="1"${section.level === 1 ? " selected" : ""}>一级章节</option>
-          <option value="2"${section.level === 2 ? " selected" : ""}>二级小节</option>
-          <option value="3"${section.level === 3 ? " selected" : ""}>三级小节</option>
-        </select>
-        <div class="section-actions">
-          <button class="icon-btn ghost" data-action="move-up" type="button" aria-label="上移" title="上移">↑</button>
-          <button class="icon-btn ghost" data-action="move-down" type="button" aria-label="下移" title="下移">↓</button>
-          <button class="icon-btn ghost danger" data-action="delete-section" type="button" aria-label="删除" title="删除">×</button>
-        </div>
-      </div>
-      <div class="field-stack">
-        <label class="form-field">
-          <span>${isReference ? "章节名称" : "标题（不用输入编号）"}</span>
-          <input data-field="title" type="text" value="${escapeHtml(cleanSectionTitle(section.title, section.level, section.kind))}" placeholder="例如：研究背景" />
-        </label>
-        <label class="form-field">
-          <span>${isReference ? "参考文献条目" : "正文内容"}</span>
-          <textarea data-field="body" rows="${isReference ? 7 : 8}" spellcheck="false">${escapeHtml(section.body || "")}</textarea>
-        </label>
-        ${hasTable ? tableFieldsHtml(section.table) : ""}
-        ${hasFigure ? figureFieldsHtml(section.figure) : ""}
-      </div>
-      <div class="section-card-foot">
-        <button class="command-btn compact" data-action="add-table" type="button">
-          <svg><use href="#icon-table"></use></svg>
-          ${hasTable ? "保留表格字段" : "添加表格字段"}
-        </button>
-        <button class="command-btn compact" data-action="add-figure" type="button">
-          <svg><use href="#icon-image"></use></svg>
-          ${hasFigure ? "保留图注字段" : "添加图注字段"}
-        </button>
-      </div>
-    </section>
-  `;
-}
+function sectionCardHtml(section,index,displayTitle) { return Workflow.sectionCardHtml(section,index,displayTitle); }
 
 function tableFieldsHtml(table) {
   return `
@@ -477,12 +427,14 @@ function findSection(id) {
 }
 
 function addSection(level) {
+  Workflow.rememberHistory(true);
   const index = Math.max(0, state.sections.findIndex((section) => section.id === activeHeadingId));
   const next = {
     id: createSectionId(),
     level,
     title: level === 1 ? "新章节标题" : level === 2 ? "新小节标题" : "新三级标题",
     body: "",
+    blocks:[ThesisModel.paragraph()],
   };
   state.sections.splice(index + 1, 0, next);
   activeHeadingId = next.id;
@@ -493,6 +445,7 @@ function addSection(level) {
 }
 
 function ensureReferenceSection() {
+  Workflow.rememberHistory(true);
   const existing = state.sections.find((section) => section.kind === "references" || section.title.includes("参考文献"));
   if (existing) {
     jumpToSection(existing.id);
@@ -503,7 +456,8 @@ function ensureReferenceSection() {
     level: 1,
     kind: "references",
     title: "参考文献",
-    body: "作者. 文献题名[J]. 期刊名称, 2026, 1(1): 1-8.",
+    body: "",
+    blocks:[],
   };
   state.sections.push(reference);
   activeHeadingId = reference.id;
@@ -513,6 +467,7 @@ function ensureReferenceSection() {
 }
 
 function deleteSection(id) {
+  Workflow.rememberHistory(true);
   if (state.sections.length <= 1) return;
   const index = state.sections.findIndex((section) => section.id === id);
   if (index < 0) return;
@@ -524,6 +479,7 @@ function deleteSection(id) {
 }
 
 function moveSection(id, direction) {
+  Workflow.rememberHistory(true);
   const index = state.sections.findIndex((section) => section.id === id);
   const target = index + direction;
   if (index < 0 || target < 0 || target >= state.sections.length) return;
@@ -628,8 +584,8 @@ function scheduleSaveAndRender() {
   state.clientUpdatedAt = new Date().toISOString();
   clearTimeout(saveTimer);
   saveState.textContent = "保存中";
-  saveTimer = window.setTimeout(() => {
-    persistState();
+  saveTimer = window.setTimeout(async () => {
+    if(!await persistState())return;
     const now = new Date();
     const target = currentUser && state.id ? "云端同步中" : "已保存到本机";
     saveState.textContent = `${target} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -640,40 +596,25 @@ function scheduleSaveAndRender() {
   renderTimer = window.setTimeout(renderAll, 180);
 }
 
-function persistState() {
+async function persistState() {
   try {
-    localStorage.setItem(stateKey, JSON.stringify(state));
+    await DraftStore.write(state);
+    localStorage.removeItem(stateKey);
+    return true;
   } catch (error) {
     saveState.textContent = "本地空间不足";
-    showToast("本地存储空间不足，请压缩图片或导出项目备份", "error");
+    showToast("本机草稿未能保存，请导出项目备份并检查浏览器存储空间", "error");
+    return false;
   }
 }
 
-function syncContent() {
-  state.content = sectionsToHtml(state.sections, state.template.headingMode);
-}
+function syncContent() { Workflow.syncContent(); }
 
-function renderAll() {
-  syncContent();
-  const chunks = chunkContentBlocks();
-  const pageMap = buildPageMap(chunks);
-  const headings = collectHeadings(pageMap);
-  renderOutline(headings);
-  renderPreview(headings, chunks);
-  runChecks(headings);
-  updateWordCount();
-  updateProgress();
-  updateCursorState();
-  updateProjectLabels();
-}
+function renderAll() { Workflow.renderAll(); }
 
-function collectHeadings(pageMap = {}) {
-  return numberSections(state.sections, state.template.headingMode).map((item, index) => ({
-    id: item.section.id,
-    level: Number(item.section.level || 1),
-    title: item.displayTitle || `未命名标题 ${index + 1}`,
-    page: pageMap[item.section.id] || Math.max(4, Math.ceil((index + 1) / 3) + 3),
-  }));
+function collectHeadings() {
+  const index=ThesisModel.indexProject(state);
+  return state.sections.map(s=>({id:s.id,level:s.level,title:index.headings[s.id] || s.title,page:null}));
 }
 
 function icon(name) {
@@ -730,100 +671,14 @@ function jumpToSection(id) {
   const card = document.getElementById(`form-${id}`);
   if (card) {
     card.scrollIntoView({ behavior: "smooth", block: "center" });
-    card.querySelector("textarea, input")?.focus({ preventScroll: true });
+    card.querySelector("[data-manuscript], textarea, input")?.focus({ preventScroll: true });
     activeHeadingId = id;
     updateCardActiveState();
     renderOutline(collectHeadings());
   }
 }
 
-function renderPreview(headings, chunks) {
-  const pages = [
-    renderCoverPage(1),
-    renderAbstractPage(2),
-    renderTocPage(headings, 3),
-    ...chunks.map((html, index) => renderContentPage(html, index + 4)),
-  ];
-  previewPages.innerHTML = pages.join("");
-}
-
-function renderCoverPage(pageNumber) {
-  return `
-    <article class="paper-page cover-page" data-preview="cover">
-      <div class="cover-code">
-        学校代码：${escapeHtml(state.metadata.schoolCode || "")}<br />
-        学号：${escapeHtml(state.metadata.studentId || "")}
-      </div>
-      <div class="cover-title">
-        <div class="school-name">${escapeHtml(state.metadata.school || "学校名称")}</div>
-        <div class="paper-kind">${escapeHtml(state.metadata.paperType || "论文")}<br />${escapeHtml(state.metadata.title || "论文题目")}</div>
-      </div>
-      <div class="cover-form">
-        ${coverLine("论文题目", state.metadata.title)}
-        ${coverLine("专业", state.metadata.major)}
-        ${coverLine("姓名", state.metadata.author)}
-        ${coverLine("指导教师", state.metadata.supervisor)}
-      </div>
-      <div class="cover-date">提交日期：${formatDate(state.metadata.date)}</div>
-      ${pageFooter(pageNumber)}
-    </article>
-  `;
-}
-
-function coverLine(label, value) {
-  return `<div class="cover-line"><span>${label}</span><span>${escapeHtml(value || "")}</span></div>`;
-}
-
-function renderAbstractPage(pageNumber) {
-  return `
-    <article class="paper-page compact-page" data-preview="abstract">
-      <section class="abstract-block">
-        <h1 class="abstract-title">中文摘要</h1>
-        <p>${escapeHtml(state.metadata.abstractCn || "请在论文信息中填写中文摘要。")}</p>
-        <p class="keywords">关键词：${escapeHtml(state.metadata.keywords || "请填写关键词")}</p>
-      </section>
-      <section class="abstract-block">
-        <h1 class="abstract-title">Abstract</h1>
-        <p>${escapeHtml(state.metadata.abstractEn || "Please fill in the English abstract.")}</p>
-        <p class="keywords">Keywords: ${escapeHtml(toEnglishKeywords(state.metadata.keywords))}</p>
-      </section>
-      ${pageFooter(pageNumber)}
-    </article>
-  `;
-}
-
-function renderTocPage(headings, pageNumber) {
-  const rows = headings
-    .map((heading) => `
-      <div class="toc-row level-${heading.level}">
-        <span>${escapeHtml(heading.title)}</span>
-        <span class="toc-dots"></span>
-        <span>${heading.page}</span>
-      </div>
-    `)
-    .join("");
-
-  return `
-    <article class="paper-page compact-page" data-preview="toc">
-      <h1>目录</h1>
-      <div class="toc-list">${rows}</div>
-      ${pageFooter(pageNumber)}
-    </article>
-  `;
-}
-
-function renderContentPage(html, pageNumber) {
-  return `
-    <article class="paper-page">
-      ${html}
-      ${pageFooter(pageNumber)}
-    </article>
-  `;
-}
-
-function pageFooter(pageNumber) {
-  return `<footer class="page-footer">第 ${pageNumber} 页</footer>`;
-}
+function renderPreview() { Workflow.schedulePreview(); }
 
 function numberSections(sections, headingMode = "chapter") {
   let chapter = 0;
@@ -923,62 +778,8 @@ function figureToHtml(figure) {
   `;
 }
 
-function chunkContentBlocks() {
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = state.content;
-  const children = Array.from(wrapper.children);
-  const chunks = [];
-  let current = [];
-  let score = 0;
-  const maxScore = 9.2;
-
-  children.forEach((node) => {
-    const tag = node.tagName.toLowerCase();
-    const textLength = node.textContent.trim().length;
-    const weight =
-      tag === "h1"
-        ? 1.8
-        : tag === "h2"
-          ? 1.25
-          : tag === "h3"
-            ? 1
-            : tag === "table"
-              ? 3.3
-              : node.classList.contains("image-placeholder") || tag === "figure"
-                ? 3.5
-                : Math.max(0.9, Math.ceil(textLength / 110));
-
-    if (score + weight > maxScore && current.length) {
-      chunks.push(current.map((item) => item.outerHTML).join(""));
-      current = [];
-      score = 0;
-    }
-
-    current.push(node.cloneNode(true));
-    score += weight;
-  });
-
-  if (current.length) {
-    chunks.push(current.map((item) => item.outerHTML).join(""));
-  }
-
-  return chunks.length ? chunks : ["<p>请填写论文内容。</p>"];
-}
-
-function buildPageMap(chunks) {
-  const map = {};
-  chunks.forEach((chunk, index) => {
-    const wrapper = document.createElement("div");
-    wrapper.innerHTML = chunk;
-    wrapper.querySelectorAll("h1, h2, h3").forEach((heading) => {
-      if (heading.id) map[heading.id] = index + 4;
-    });
-  });
-  return map;
-}
-
 function runChecks(headings = collectHeadings()) {
-  const text = `${Object.values(state.metadata).join("")}${state.sections.map((section) => `${section.title}${section.body}`).join("")}`.replace(/\s+/g, "");
+  const text = `${Object.values(state.metadata).join("")}${state.sections.map((section) => `${section.title}${ThesisModel.blocksText(section.blocks)}`).join("")}`.replace(/\s+/g, "");
   const issues = [];
 
   requiredMeta("school", "缺少学校名称", "metadata", issues);
@@ -1130,7 +931,7 @@ function updateProgress() {
     state.metadata.abstractCn,
     state.metadata.keywords,
     state.sections.some((section) => section.level === 1 && section.body.trim()) ? "yes" : "",
-    state.sections.some((section) => section.kind === "references" && section.body.trim()) ? "yes" : "",
+    state.references.length ? "yes" : "",
   ];
   const completed = required.filter((value) => String(value || "").trim()).length;
   const percent = Math.round((completed / required.length) * 100);
@@ -1173,30 +974,14 @@ function populateDrawer() {
 
 function updateProjectLabels() {
   document.getElementById("projectSubtitle").textContent = `${state.metadata.paperType} · ${state.metadata.title}`;
-  document.getElementById("drawerTitle").textContent = "论文信息与模板规则";
+  document.getElementById("drawerTitle").textContent = "论文信息";
   document.querySelector(".template-pill").childNodes[0].textContent = `${state.template.name} `;
 }
 
 function applyDrawerState() {
-  getMetadataFields().forEach(([key, element]) => {
-    state.metadata[key] = element.value.trim();
-  });
-
-  state.template.fontFamily = document.getElementById("fontFamily").value;
-  state.template.fontSize = document.getElementById("fontSize").value;
-  state.template.lineHeight = document.getElementById("lineHeight").value;
-  state.template.pageMargin = document.getElementById("pageMargin").value;
-  state.template.headingMode = document.getElementById("headingMode").value;
-  state.template.requirementText = document.getElementById("requirementText").value;
-  if (document.getElementById("templatePreset").value === "custom") {
-    state.template.name = "自定义论文模板";
-  }
-
-  applyTemplateVars();
-  updateProjectLabels();
-  renderStructuredEditor();
-  scheduleSaveAndRender();
-  closeDrawer();
+  Workflow.rememberHistory(true);
+  getMetadataFields().forEach(([key,element])=>state.metadata[key]=element.value.trim());
+  renderStructuredEditor();scheduleSaveAndRender();closeDrawer();
 }
 
 function applyTemplateVars() {
@@ -1208,7 +993,7 @@ function applyTemplateVars() {
 
 function setZoom(nextZoom) {
   zoom = Math.max(0.48, Math.min(1.08, nextZoom));
-  previewPages.style.zoom = zoom;
+  // The PDF viewer manages its own scale. Never scale printable output.
   document.getElementById("zoomLabel").textContent = `${Math.round(zoom * 100)}%`;
 }
 
@@ -1273,65 +1058,13 @@ function applyTemplatePreset(event) {
   scheduleSaveAndRender();
 }
 
-function parseRequirement() {
-  const raw = document.getElementById("requirementText").value;
-  const results = [];
-
-  if (raw.includes("宋体")) {
-    document.getElementById("fontFamily").value = "'Songti SC', SimSun, serif";
-    results.push("正文字体：宋体");
-  } else if (raw.includes("黑体")) {
-    document.getElementById("fontFamily").value = "'Hiragino Sans GB', 'Microsoft YaHei', sans-serif";
-    results.push("标题/正文倾向：黑体或无衬线");
-  }
-
-  if (raw.includes("小四")) {
-    document.getElementById("fontSize").value = "15px";
-    results.push("正文字号：小四");
-  } else if (raw.includes("四号")) {
-    document.getElementById("fontSize").value = "16px";
-    results.push("正文字号：四号");
-  } else if (raw.includes("五号")) {
-    document.getElementById("fontSize").value = "14px";
-    results.push("正文字号：五号");
-  }
-
-  if (raw.includes("2 倍") || raw.includes("2倍")) {
-    document.getElementById("lineHeight").value = "2";
-    results.push("行距：2 倍");
-  } else if (raw.includes("1.5")) {
-    document.getElementById("lineHeight").value = "1.75";
-    results.push("行距：1.5 倍");
-  }
-
-  if (raw.includes("左 3") || raw.includes("左3") || raw.includes("装订")) {
-    document.getElementById("pageMargin").value = "30mm 25mm 25mm 30mm";
-    results.push("页边距：装订版");
-  } else if (raw.includes("2.5cm") || raw.includes("2.5 cm")) {
-    document.getElementById("pageMargin").value = "25mm";
-    results.push("页边距：四边 2.5cm");
-  }
-
-  if (raw.includes("GB/T 7714") || raw.includes("7714")) {
-    results.push("参考文献：GB/T 7714");
-  }
-
-  document.getElementById("parseResult").innerHTML = results.length
-    ? results.map((item) => `<span class="parse-pill">${escapeHtml(item)}</span>`).join("")
-    : `<span class="parse-pill">未识别到明确规则，可手动调整上方模板项</span>`;
-}
+function parseRequirement() { closeDrawer(); Workflow.showSetup(true); }
 
 async function newProject() {
-  if (!window.confirm("新建项目会替换当前本地草稿。确定继续吗？")) return;
-  state = createDefaultState();
-  activeHeadingId = state.sections[0]?.id || "";
-  populateDrawer();
-  applyTemplateVars();
-  renderStructuredEditor();
-  scheduleSaveAndRender();
-  if (currentUser && cloudAvailable) {
-    await createProjectFromCurrentState(null, true);
-  }
+  if(!window.confirm('新建论文会替换当前草稿，请先导出需要保留的备份。继续吗？'))return;
+  clearTimeout(cloudSaveTimer);
+  try{if(state.id)await saveCloudProject();}catch{return;}
+  Workflow.invalidatePreview();state=createDefaultState();activeHeadingId=state.sections[0]?.id || '';populateDrawer();renderStructuredEditor();persistState();Workflow.showSetup(false);
 }
 
 async function checkCloudStatus() {
@@ -1357,7 +1090,7 @@ async function restoreSession() {
       const cloud = await apiRequest(`/api/projects/${encodeURIComponent(state.id)}`);
       const remoteTime = new Date(cloud.project.updatedAt || 0).getTime();
       const localTime = new Date(state.clientUpdatedAt || 0).getTime();
-      if (remoteTime > localTime) applyCloudProject(cloud.project);
+      if(remoteTime>localTime && cloud.project.revision!==state.revision)showToast("云端有另一版本，当前本机草稿已保留。可在项目中心选择重新加载。", "error");
     }
   } catch (error) {
     localStorage.removeItem(tokenKey);
@@ -1577,7 +1310,9 @@ async function createProjectFromCurrentState(event, silent = false) {
 
 async function openCloudProject(id) {
   try {
-    if (state.id) await saveCloudProject();
+    clearTimeout(cloudSaveTimer);
+    if(state.id===id && !window.confirm("重新加载会使用云端版本替换当前内容，请先导出需要保留的本机备份。继续吗？"))return;
+    if(state.id && state.id!==id)await saveCloudProject();
     const result = await apiRequest(`/api/projects/${encodeURIComponent(id)}`);
     applyCloudProject(result.project);
     projectDialog.close();
@@ -1588,6 +1323,8 @@ async function openCloudProject(id) {
 }
 
 function applyCloudProject(project) {
+  clearTimeout(cloudSaveTimer);
+  Workflow.invalidatePreview();
   state = mergeState(createDefaultState(), project);
   state.id = project.id;
   state.revision = Number(project.revision || 1);
@@ -1598,6 +1335,7 @@ function applyCloudProject(project) {
   renderStructuredEditor();
   renderAll();
   persistState();
+  if(state.formatReady)Workflow.enterEditor();else Workflow.showSetup(false);
 }
 
 async function deleteCloudProject(id) {
@@ -1621,55 +1359,31 @@ function scheduleCloudSave(force = false) {
   clearTimeout(cloudSaveTimer);
   if (!currentUser || !state.id || !cloudAvailable) return;
   if (force) {
-    saveCloudProject();
+    saveCloudProject().catch(()=>{});
     return;
   }
-  cloudSaveTimer = window.setTimeout(saveCloudProject, 1200);
+  cloudSaveTimer = window.setTimeout(()=>saveCloudProject().catch(()=>{}), 1200);
 }
 
 async function saveCloudProject() {
-  if (!currentUser || !state.id || !cloudAvailable) return;
-  if (cloudSaveInFlight) {
-    cloudSavePending = true;
-    return;
-  }
-  cloudSaveInFlight = true;
-  try {
-    syncContent();
-    const result = await apiRequest(`/api/projects/${encodeURIComponent(state.id)}`, {
-      method: "PUT",
-      body: projectPayload(true),
-    });
-    state.revision = Number(result.project.revision || state.revision + 1);
-    state.clientUpdatedAt = result.project.updatedAt;
-    persistState();
-    saveState.textContent = `已同步云端 ${formatClock(result.project.updatedAt)}`;
-  } catch (error) {
-    if (error.status === 409) {
-      saveState.textContent = "云端版本冲突";
-      showToast("项目已在其他设备更新，请从项目中心重新加载", "error");
-    } else {
-      saveState.textContent = "云端同步失败，本机已保存";
+  if(!currentUser || !state.id || !cloudAvailable)return;
+  if(cloudSavePromise){cloudSavePending=true;await cloudSavePromise;if(cloudSavePending){cloudSavePending=false;return saveCloudProject();}return;}
+  syncContent();const projectId=state.id,localTime=state.clientUpdatedAt,payload=JSON.parse(JSON.stringify(projectPayload(true)));
+  cloudSavePromise=(async()=>{
+    try{
+      const result=await apiRequest(`/api/projects/${encodeURIComponent(projectId)}`,{method:'PUT',body:payload});
+      if(state.id===projectId){state.revision=Number(result.project.revision);if(state.clientUpdatedAt===localTime)state.clientUpdatedAt=result.project.updatedAt;persistState();saveState.textContent='已同步云端';}
+    }catch(error){
+      persistState();saveState.textContent=error.status===409?'云端版本冲突，本机草稿已保留':'云端同步失败，本机已保存';
+      showToast(error.status===409?'请先导出本机备份，再选择重新加载云端版本。':error.message,'error');throw error;
     }
-  } finally {
-    cloudSaveInFlight = false;
-    if (cloudSavePending) {
-      cloudSavePending = false;
-      scheduleCloudSave(true);
-    }
-  }
+  })();
+  try{await cloudSavePromise;}finally{cloudSavePromise=null;cloudSaveInFlight=false;}
 }
 
 function projectPayload(includeRevision) {
-  const payload = {
-    title: state.metadata.title || "未命名论文",
-    metadata: state.metadata,
-    template: state.template,
-    sections: state.sections,
-    content: state.content,
-  };
-  if (includeRevision) payload.revision = Number(state.revision || 1);
-  return payload;
+  const payload={schemaVersion:3,title:state.metadata.title || '未命名论文',metadata:state.metadata,template:state.template,sections:state.sections,references:state.references,formatRules:state.formatRules,requirementsText:state.requirementsText,formatReady:state.formatReady,content:state.content};
+  if(includeRevision)payload.revision=Number(state.revision || 1);return payload;
 }
 
 function showToast(message, type = "") {
@@ -1714,6 +1428,9 @@ function importProject() {
   reader.onload = () => {
     try {
       const incoming = JSON.parse(String(reader.result));
+      if(!window.confirm("导入项目会替换当前草稿。确认已备份当前内容并继续吗？"))return;
+      clearTimeout(cloudSaveTimer);
+      Workflow.invalidatePreview();
       state = mergeState(createDefaultState(), incoming);
       state.id = null;
       state.revision = 0;
@@ -1723,6 +1440,7 @@ function importProject() {
       renderStructuredEditor();
       scheduleSaveAndRender();
       saveState.textContent = "项目已导入";
+      if(state.formatReady)Workflow.enterEditor();else Workflow.showSetup(false);
       showToast("项目导入成功");
     } catch (error) {
       window.alert("导入失败：请选择由本工具导出的 JSON 项目文件。");
@@ -1733,79 +1451,11 @@ function importProject() {
   reader.readAsText(file);
 }
 
-function exportWord() {
-  syncContent();
-  const chunks = chunkContentBlocks();
-  const pageMap = buildPageMap(chunks);
-  const headings = collectHeadings(pageMap);
-  const html = `
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeHtml(state.metadata.title)}</title>
-        <style>
-          @page { size: A4; margin: 2.6cm 2.4cm 2.4cm 2.8cm; }
-          body { font-family: SimSun, serif; font-size: 12pt; line-height: 1.7; color: #111; }
-          h1 { text-align: center; font-size: 18pt; margin: 22pt 0 12pt; }
-          h2 { font-size: 15pt; margin: 16pt 0 8pt; }
-          h3 { font-size: 13pt; margin: 12pt 0 6pt; }
-          p { text-indent: 2em; margin: 0 0 8pt; }
-          table { width: 100%; border-collapse: collapse; margin: 10pt 0; }
-          th, td { border: 1px solid #777; padding: 6pt; }
-          th { background: #eef2f7; }
-          .page-break { page-break-after: always; }
-          .center { text-align: center; text-indent: 0; }
-          .cover-title { margin-top: 160pt; font-size: 24pt; font-weight: bold; }
-          .cover-line { width: 70%; margin: 12pt auto; border-bottom: 1px solid #555; text-align: center; text-indent: 0; }
-          .toc-row { display: block; margin: 4pt 0; text-indent: 0; }
-          .image-placeholder { border: 1px dashed #777; padding: 30pt; text-align: center; text-indent: 0; }
-          figcaption, .figure-caption { text-align: center; text-indent: 0; font-size: 10.5pt; }
-        </style>
-      </head>
-      <body>
-        ${wordCoverHtml()}
-        <div class="page-break"></div>
-        ${wordAbstractHtml()}
-        <div class="page-break"></div>
-        <h1>目录</h1>
-        ${headings.map((heading) => `<p class="toc-row">${escapeHtml(heading.title)} ...... ${heading.page}</p>`).join("")}
-        <div class="page-break"></div>
-        ${state.content}
-      </body>
-    </html>
-  `;
-  downloadBlob(`${safeFileName(state.metadata.title || "论文")}_${safeFileName(state.metadata.author || "作者")}.doc`, new Blob(["\ufeff", html], { type: "application/msword" }));
-}
-
-function wordCoverHtml() {
-  return `
-    <p class="center">学校代码：${escapeHtml(state.metadata.schoolCode || "")}　　学号：${escapeHtml(state.metadata.studentId || "")}</p>
-    <p class="center cover-title">${escapeHtml(state.metadata.school || "")}</p>
-    <h1>${escapeHtml(state.metadata.paperType || "论文")}</h1>
-    <p class="cover-line">论文题目：${escapeHtml(state.metadata.title || "")}</p>
-    <p class="cover-line">专业：${escapeHtml(state.metadata.major || "")}</p>
-    <p class="cover-line">姓名：${escapeHtml(state.metadata.author || "")}</p>
-    <p class="cover-line">指导教师：${escapeHtml(state.metadata.supervisor || "")}</p>
-    <p class="center">提交日期：${formatDate(state.metadata.date)}</p>
-  `;
-}
-
-function wordAbstractHtml() {
-  return `
-    <h1>中文摘要</h1>
-    <p>${escapeHtml(state.metadata.abstractCn || "")}</p>
-    <p><strong>关键词：</strong>${escapeHtml(state.metadata.keywords || "")}</p>
-    <h1>Abstract</h1>
-    <p>${escapeHtml(state.metadata.abstractEn || "")}</p>
-    <p><strong>Keywords:</strong> ${escapeHtml(toEnglishKeywords(state.metadata.keywords))}</p>
-  `;
-}
+function exportWord() { return Workflow.exportDocument('word'); }
 
 function sectionsFromHtml(html) {
   if (!html) return null;
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = html;
+  const wrapper = new DOMParser().parseFromString(String(html),'text/html').body;
   const sections = [];
   let current = null;
 
@@ -1867,30 +1517,7 @@ function extractTable(table) {
   };
 }
 
-function normalizeSections(sections) {
-  if (!Array.isArray(sections) || !sections.length) return null;
-  return sections.map((section) => ({
-    id: section.id || createSectionId(),
-    level: Math.min(3, Math.max(1, Number(section.level || 1))),
-    kind: section.kind === "references" ? "references" : undefined,
-    title: cleanSectionTitle(String(section.title || "未命名标题"), Number(section.level || 1), section.kind),
-    body: String(section.body || ""),
-    table: section.table
-      ? {
-          caption: String(section.table.caption || ""),
-          headers: Array.isArray(section.table.headers) ? section.table.headers : ["项目", "说明", "状态"],
-          rows: String(section.table.rows || ""),
-        }
-      : undefined,
-    figure: section.figure
-      ? {
-          caption: String(section.figure.caption || ""),
-          alt: String(section.figure.alt || ""),
-          dataUrl: /^data:image\//.test(String(section.figure.dataUrl || "")) ? String(section.figure.dataUrl) : "",
-        }
-      : undefined,
-  }));
-}
+function normalizeSections(sections) { return Array.isArray(sections)&&sections.length?ThesisModel.normalizeSections(sections):null; }
 
 function downloadBlob(filename, blob) {
   const link = document.createElement("a");

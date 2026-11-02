@@ -120,7 +120,7 @@ function readRaw(filePath) {
 }
 
 function writeRaw(filePath, value) {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   fs.renameSync(tempPath, filePath);
 }
@@ -157,6 +157,30 @@ async function writeCollection(name, rows, options = {}) {
   }
 
   writeRaw(collectionPath(collection.file), { [collection.root]: rows });
+}
+
+const mutationQueues=new Map();
+async function mutateCollection(name,mutator,options={}){
+  if(!options.skipEnsure)await ensureDataStore();
+  if(storageMode()==='upstash'){
+    for(let attempt=0;attempt<10;attempt++){
+      const raw=await redisCommand(['GET',redisKey(name)]);
+      const rows=raw?JSON.parse(raw):[];
+      const next=mutator(rows);
+      const changed=await redisCommand(['EVAL',"local v=redis.call('GET',KEYS[1]); if (v or '') ~= ARGV[1] then return 0 end; redis.call('SET',KEYS[1],ARGV[2]); return 1",'1',redisKey(name),raw || '',JSON.stringify(next)]);
+      if(Number(changed)===1)return next;
+    }
+    throw Object.assign(new Error('数据正在被其他请求更新，请稍后重试。'),{statusCode:409});
+  }
+  const previous=mutationQueues.get(name) || Promise.resolve();
+  const operation=previous.catch(()=>{}).then(async()=>{
+    const rows=await readCollection(name,{skipEnsure:true});
+    const next=mutator(rows);
+    await writeCollection(name,next,{skipEnsure:true});
+    return next;
+  });
+  mutationQueues.set(name,operation);
+  try{return await operation;}finally{if(mutationQueues.get(name)===operation)mutationQueues.delete(name);}
 }
 
 async function redisCommand(command) {
@@ -206,4 +230,5 @@ module.exports = {
   readCollection,
   storageMode,
   writeCollection,
+  mutateCollection,
 };

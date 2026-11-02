@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 const appConfig = require("./config");
-const { createId, now, pickPublicUser, readCollection, writeCollection } = require("./storage");
+const { createId, now, pickPublicUser, readCollection, mutateCollection } = require("./storage");
 const { getBearerToken } = require("./http-utils");
 
 function normalizeEmail(email) {
@@ -38,11 +38,6 @@ async function register({ email, password, name }) {
   assertValidEmail(normalizedEmail);
   assertValidPassword(password);
 
-  const users = await readCollection("users");
-  if (users.some((user) => user.email === normalizedEmail)) {
-    throw Object.assign(new Error("该邮箱已注册"), { statusCode: 409 });
-  }
-
   const user = {
     id: createId("usr"),
     email: normalizedEmail,
@@ -51,8 +46,10 @@ async function register({ email, password, name }) {
     createdAt: now(),
     updatedAt: now(),
   };
-  users.push(user);
-  await writeCollection("users", users);
+  await mutateCollection('users',users=>{
+    if(users.some(item=>item.email===normalizedEmail))throw Object.assign(new Error('该邮箱已注册'),{statusCode:409});
+    return [...users,user];
+  });
 
   return {
     user: pickPublicUser(user),
@@ -76,29 +73,27 @@ async function login({ email, password }) {
 }
 
 async function createSession(userId) {
-  const sessions = await readCollection("sessions");
   const token = crypto.randomBytes(32).toString("hex");
   const createdAt = now();
   const expiresAt = new Date(Date.now() + appConfig.sessionTtlDays * 24 * 60 * 60 * 1000).toISOString();
-  sessions.push({
+  const session = {
     id: createId("ses"),
     userId,
     tokenHash: sha256(token),
     createdAt,
     expiresAt,
-  });
-  await writeCollection("sessions", sessions.filter((item) => new Date(item.expiresAt).getTime() > Date.now()));
+  };
+  await mutateCollection('sessions',sessions=>[...sessions.filter(item=>new Date(item.expiresAt).getTime()>Date.now()),session]);
   return { token, expiresAt };
 }
 
 async function logout(req) {
   const token = getBearerToken(req);
   if (!token) return false;
-  const sessions = await readCollection("sessions");
   const tokenHash = sha256(token);
-  const next = sessions.filter((session) => session.tokenHash !== tokenHash);
-  await writeCollection("sessions", next);
-  return next.length !== sessions.length;
+  let changed=false;
+  await mutateCollection('sessions',sessions=>{const next=sessions.filter(session=>session.tokenHash!==tokenHash);changed=next.length!==sessions.length;return next;});
+  return changed;
 }
 
 async function requireUser(req) {
