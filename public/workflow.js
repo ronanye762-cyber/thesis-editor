@@ -42,6 +42,7 @@ const Workflow = (() => {
     editor.addEventListener('paste',onPaste);
     editor.addEventListener('drop',event=>{if(event.target.closest('[data-manuscript]')){event.preventDefault();showToast('请通过顶部附件入口插入图片，或用移动按钮调整位置。');}});
     editor.addEventListener('click',onEditorClick);
+    editor.addEventListener('mousedown',event=>{if(event.target.closest('[data-image-action]'))event.preventDefault();});
     editor.addEventListener('keydown',event=>{
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();history(event.shiftKey?'redo':'undo');}
       if(event.key==='Escape'){selectedImage=null;editor.querySelectorAll('.manuscript-image.selected').forEach(x=>x.classList.remove('selected'));}
@@ -145,6 +146,7 @@ const Workflow = (() => {
   function captureSelection(){
     const selection=window.getSelection();if(!selection?.rangeCount)return;
     const range=selection.getRangeAt(0),node=range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement;
+    if(node.closest?.('[data-image-id],[data-reference-id],button'))return;
     const container=node.closest?.('[data-manuscript]');
     if(container&&container.contains(range.endContainer))bookmark={sectionId:container.dataset.manuscript,range:range.cloneRange()};
   }

@@ -44,3 +44,10 @@ test('a manuscript with images survives a refresh through the IndexedDB draft st
   await page.locator('#attachmentFile').setInputFiles({name:'table.png',mimeType:'image/png',buffer:image});await page.locator('#attachmentCaption').fill('持久化表格');await page.locator('#attachmentSubmit').click();
   await expect(page.locator('#saveState')).toContainText('已保存到本机');await page.reload();await page.locator('#continueDraft').click();await expect(body.locator('figure')).toHaveCount(1);await expect(body.locator('figcaption')).toContainText('表 1-1 持久化表格');await expect(body).toContainText('保存后文');
 });
+test('moving an image to another chapter keeps the target caret and renumbers it',async({page})=>{
+  await enter(page);const bodies=page.locator('[data-manuscript]');await bodies.first().fill('原章节正文');await caret(page,2);
+  await page.locator('#addAttachment').click();await page.locator('[data-insert-kind="figure"]').click();await page.locator('#attachmentFile').setInputFiles({name:'move.png',mimeType:'image/png',buffer:image});await page.locator('#attachmentCaption').fill('可移动图片');await page.locator('#attachmentSubmit').click();await expect(bodies.first().locator('figure')).toHaveCount(1);
+  const target=bodies.nth(3);await target.fill('目标前文目标后文');await target.evaluate(el=>{el.focus();const range=document.createRange();range.setStart(document.createTreeWalker(el,NodeFilter.SHOW_TEXT).nextNode(),4);range.collapse(true);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);});
+  await page.waitForTimeout(50);await bodies.first().locator('[data-image-action="move"]').click();
+  await expect(bodies.first().locator('figure')).toHaveCount(0);await expect(target.locator('figure')).toHaveCount(1);await expect(target.locator('figcaption')).toContainText('图 2-1');await expect(target.locator('p').first()).toHaveText('目标前文');await expect(target.locator('p').last()).toHaveText('目标后文');
+});
